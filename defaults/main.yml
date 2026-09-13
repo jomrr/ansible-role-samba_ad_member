@@ -82,6 +82,7 @@ samba_ad_member_global_options:
 
 # Native options inherited by every share; item options merge over this dictionary.
 # A VFS override replaces the entire stack. See README.md and docs/security.md for details.
+# Keep streams_xattr before recycle; recycling discards ADS, including Zone.Identifier.
 samba_ad_member_share_options:
   browseable: true
   read only: true
@@ -89,7 +90,7 @@ samba_ad_member_share_options:
   inherit acls: true
   map acl inherit: true
   store dos attributes: true
-  vfs objects: full_audit acl_xattr recycle
+  vfs objects: full_audit acl_xattr streams_xattr recycle
   acl_xattr:ignore system acls: false
   recycle:repository: .recycle
   recycle:keeptree: true

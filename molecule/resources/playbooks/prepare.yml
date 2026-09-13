@@ -185,3 +185,9 @@
         dest: /tmp/member-payload.txt
         content: "Samba AD member functional test\n"
         mode: '0644'
+
+    - name: SAMBA_AD_MEMBER | Create Windows zone metadata for stream checks
+      ansible.builtin.copy:
+        dest: /tmp/member-zone.txt
+        content: "[ZoneTransfer]\r\nZoneId=3\r\n"
+        mode: '0644'

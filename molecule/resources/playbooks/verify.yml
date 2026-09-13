@@ -52,6 +52,8 @@
         - {user: writer, command: 'put /tmp/member-payload.txt inherited/payload.txt'}
         - {user: reader, command: 'get inherited/payload.txt /tmp/member-readback.txt'}
         - {user: writer, command: 'put /tmp/member-payload.txt inherited/recycled.txt'}
+        - {user: writer, command: 'put /tmp/member-zone.txt inherited/recycled.txt:Zone.Identifier'}
+        - {user: reader, command: 'get inherited/recycled.txt:Zone.Identifier /tmp/member-shared-zone.txt'}
         - {user: writer, command: 'del inherited/recycled.txt'}
         - {user: reader, command: 'get .recycle/inherited/recycled.txt /tmp/member-recycled.txt'}
         - {user: writer2, command: 'rename .recycle/inherited/recycled.txt inherited/restored.txt'}
@@ -96,6 +98,8 @@
         - {share: Redirected$,
            command: 'get writer/.recycle/writer/Documents/recycled.txt /tmp/member-redirected-recycled.txt'}
         - {share: Personal, command: 'put /tmp/member-payload.txt Documents/private.txt'}
+        - {share: Personal, command: 'put /tmp/member-zone.txt Documents/private.txt:Zone.Identifier'}
+        - {share: Personal, command: 'get Documents/private.txt:Zone.Identifier /tmp/member-personal-zone.txt'}
         - {share: Personal, command: 'del Documents/private.txt'}
         - {share: Personal, command: 'get .recycle/Documents/private.txt /tmp/member-personal-recycled.txt'}
       loop_control:
@@ -110,6 +114,16 @@
       loop: [/tmp/member-redirected-recycled.txt, /tmp/member-personal-recycled.txt]
       loop_control:
         loop_var: __samba_ad_member_private_readback
+
+    - name: SAMBA_AD_MEMBER | Compare private and shared streams read through SMB
+      ansible.builtin.command:
+        argv: [cmp, /tmp/member-zone.txt, "{{ __samba_ad_member_stream_readback }}"]
+      changed_when: false
+      loop:
+        - /tmp/member-shared-zone.txt
+        - /tmp/member-personal-zone.txt
+      loop_control:
+        loop_var: __samba_ad_member_stream_readback
 
     - name: SAMBA_AD_MEMBER | Change a Windows ACL through SMB
       ansible.builtin.command:
@@ -162,6 +176,7 @@
         'NT_STATUS_ACCESS_DENIED' not in __samba_ad_member_denial.stdout
       loop:
         - {user: reader, share: Projects, command: 'put /tmp/member-payload.txt denied.txt'}
+        - {user: reader, share: Projects, command: 'put /tmp/member-zone.txt inherited/restored.txt:Zone.Identifier'}
         - {user: reader, share: Projects, command: 'del .recycle/inherited/recycled.txt'}
         - {user: outsider, share: Projects, command: ls}
         - {user: reader, share: Redirected$, command: 'get writer/Documents/payload.txt /tmp/private-leak.txt'}

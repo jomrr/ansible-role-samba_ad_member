@@ -131,7 +131,7 @@ argument_specs:
           inherit acls: true
           map acl inherit: true
           store dos attributes: true
-          vfs objects: full_audit acl_xattr recycle
+          vfs objects: full_audit acl_xattr streams_xattr recycle
           acl_xattr:ignore system acls: false
           recycle:repository: .recycle
           recycle:keeptree: true

@@ -320,7 +320,7 @@ samba_ad_member_share_options:
   inherit acls: true
   map acl inherit: true
   store dos attributes: true
-  vfs objects: full_audit acl_xattr recycle
+  vfs objects: full_audit acl_xattr streams_xattr recycle
   acl_xattr:ignore system acls: false
   recycle:repository: .recycle
   recycle:keeptree: true
@@ -565,13 +565,25 @@ available before AD directory owners and ACL principals are resolved.
   ACLs, explicitly declare owner, owning group, mask, and other entries
   alongside named principals to make inheritance clear. Existing children retain
   their permissions.
-- The default VFS stack is full_audit acl_xattr recycle, with acl_xattr:ignore
-  system acls: false, so POSIX permissions remain enforced. Set vfs objects in
-  share_options or an individual share options dictionary to an ordered,
-  space-separated module list. This replaces the entire stack; retain the
-  default modules when adding others. Keep full_audit first to observe
+- The default VFS stack is full_audit acl_xattr streams_xattr recycle, with
+  acl_xattr:ignore system acls: false, so POSIX permissions remain enforced. Set
+  vfs objects in share_options or an individual share options dictionary to an
+  ordered, space-separated module list. This replaces the entire stack; retain
+  the default modules when adding others. Keep full_audit first to observe
   operations before recycle transforms deletions. An empty string disables the
   stack. Module parameters use native Samba names in the same dictionary.
+- streams_xattr stores alternate data streams such as client-supplied
+  Zone.Identifier in user.DosStream.* xattrs. Keep its native prefix and
+  stream-type defaults. Filesystem xattr limits, including on Btrfs, constrain
+  stream sizes; this supports small Windows metadata, not arbitrary NTFS stream
+  sizes. Backups and local file copies must preserve xattrs. The module does not
+  create zone information.
+- Keep streams_xattr before recycle: the reverse order aborts smbd when deleting
+  a file with ADS on the tested Samba 4.24.6 systems. With the selected order,
+  Samba removes ADS before recycling the base file. Recovery from .recycle
+  restores ordinary file data without its streams, including Zone.Identifier.
+  This loss is deliberately accepted; see [docs/security.md](docs/security.md)
+  for the rationale and sources.
 - Each share uses .recycle with preserved paths and versioning. Group drives
   have a common bin; user-specific shares keep it inside the private share root.
   The 0770 creation modes allow group permissions and inherited named ACLs,
@@ -741,16 +753,6 @@ samba_ad_member_shares:
       directory mask: '0700'
 ```
 
-### Extend the VFS stack for one share
-
-Add the following options to the Projects share above, retaining its directory
-permissions and ACLs. The module order and parameters are native Samba
-configuration; install extra module packages where required.
-
-```yaml
-vfs objects: full_audit acl_xattr recycle streams_xattr
-```
-
 ### Btrfs snapshots for Windows Previous Versions
 
 This layout assumes an existing Btrfs filesystem mounted at `/srv/samba`.
@@ -818,7 +820,7 @@ directories:
     acls: []
 # Merge into the Projects share's options dictionary:
 options:
-  vfs objects: full_audit shadow_copy2 acl_xattr recycle
+  vfs objects: full_audit shadow_copy2 acl_xattr streams_xattr recycle
   shadow:snapdir: /srv/samba/.snapshots/projects
   shadow:basedir: /srv/samba/projects
   shadow:format: '@GMT-%Y.%m.%d-%H.%M.%S'
@@ -854,6 +856,7 @@ samba_ad_member_idmap_default_range: 65536-69999
 - [Linux and systemd UID/GID ranges](https://systemd.io/UIDS-GIDS/)
 - [Samba configuration options](https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html)
 - [Samba acl_xattr](https://www.samba.org/samba/docs/current/man-html/vfs_acl_xattr.8.html)
+- [Samba streams_xattr](https://www.samba.org/samba/docs/current/man-html/vfs_streams_xattr.8.html)
 - [Samba recycle](https://www.samba.org/samba/docs/current/man-html/vfs_recycle.8.html)
 - [Samba full_audit](https://www.samba.org/samba/docs/current/man-html/vfs_full_audit.8.html)
 - [Samba shadow_copy2](https://www.samba.org/samba/docs/current/man-html/vfs_shadow_copy2.8.html)

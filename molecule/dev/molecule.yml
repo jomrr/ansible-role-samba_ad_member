@@ -80,7 +80,7 @@ provisioner:
               valid users: "@\"EXAMPLE\\File Readers\" @\"EXAMPLE\\File Writers\""
               read list: "@\"EXAMPLE\\File Readers\""
               write list: "@\"EXAMPLE\\File Writers\""
-              vfs objects: "full_audit shadow_copy2 acl_xattr recycle"
+              vfs objects: "full_audit shadow_copy2 acl_xattr streams_xattr recycle"
               shadow:snapdir: "/srv/samba/.snapshots/projects"
               shadow:basedir: "/srv/samba/projects"
               shadow:format: "@GMT-%Y.%m.%d-%H.%M.%S"

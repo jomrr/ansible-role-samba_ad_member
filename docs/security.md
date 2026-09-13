@@ -16,6 +16,7 @@ group shares. The table records the choices and their reasons.
 | Connection logs | `1 auth_audit:4`; bounded file rollover. | [Samba]; [CIS 8] |
 | File permissions | Read-only shares by default; explicit POSIX ACLs. | [BSI] A3; [CIS 3] |
 | Windows ACL storage | Enable `acl_xattr`; retain POSIX enforcement. | [ACL module] |
+| Alternate data streams | Enable `streams_xattr` for Windows metadata such as zone information. | [Streams] |
 | Deleted files | One `.recycle` per share; access follows its users/groups. | [recycle] |
 | File operation logs | Enable `full_audit` with explicit operations. | [Full audit] |
 | Additional VFS modules | Explicit ordered stack and native options. | [BSI] A1/A10 |
@@ -57,11 +58,29 @@ Windows-only administration can explicitly select `ignore system acls: true`;
 then SMB no longer enforces the Ansible POSIX policy. This is an alternative
 access model, not a hardening switch. [ACL module]
 
-The default stack is `full_audit acl_xattr recycle`. Configure plugins through
-`vfs objects` in `samba_ad_member_share_options` or a share's `options`; each
+The default stack is `full_audit acl_xattr streams_xattr recycle`. Configure
+plugins through `vfs objects` in `samba_ad_member_share_options` or a share's
+`options`; each
 value replaces the complete stack. Keep `full_audit` first so client operations
 are observed before `recycle` handles deletions. Additional modules may require
 distribution packages.
+
+`streams_xattr` stores alternate data streams, including client-supplied
+`Zone.Identifier`, in `user.DosStream.*` extended attributes. Keep the module's
+default prefix and stream-type storage. This supports retaining Windows zone
+metadata; the module does not create or validate that metadata. Stream sizes
+are limited by the filesystem's xattr capacity, so this is suitable for small
+metadata streams rather than arbitrary NTFS stream sizes. Backups and local
+file copies must preserve xattrs to retain the streams. [Streams]
+
+Keep `streams_xattr` before `recycle`. The reverse order aborts the smbd process
+when deleting a file with ADS on the tested Samba 4.24.6 systems: `recycle`
+passes a named stream to an ordinary file rename operation. With the selected
+order, Samba removes the streams before recycling the base file. Restoring
+from `.recycle` recovers the ordinary file data without its ADS, including
+`Zone.Identifier`. The role deliberately accepts this loss in exchange for
+working file recycling and ADS support on live files. [Stream deletion];
+[Streams implementation]; [Recycle implementation]
 
 Recycle bins use `.recycle` relative to the share root, with versioning and
 `0770` directory creation modes. This permits group access and inherited named
@@ -133,6 +152,9 @@ Existing identity managers must not overwrite those NSS entries. [Authselect]
 
 [Samba]: https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html
 [ACL module]: https://www.samba.org/samba/docs/current/man-html/vfs_acl_xattr.8.html
+[Streams]: https://www.samba.org/samba/docs/current/man-html/vfs_streams_xattr.8.html
+[Stream deletion]: https://github.com/samba-team/samba/blob/samba-4.24.6/source3/smbd/close.c
+[Streams implementation]: https://github.com/samba-team/samba/blob/samba-4.24.6/source3/modules/vfs_streams_xattr.c
 [ACL implementation]: https://github.com/samba-team/samba/blob/master/source3/modules/vfs_acl_common.c
 [ID mapping]: https://www.samba.org/samba/docs/current/man-html/idmap_ad.8.html
 [Linux IDs]: https://systemd.io/UIDS-GIDS/
