@@ -1,0 +1,191 @@
+---
+# role: samba_ad_member
+# file: defaults/main.yml
+
+# Required AD DNS domain / Kerberos realm; immutable after joining.
+# samba_ad_member_realm: AD.EXAMPLE.COM
+
+# Required AD NetBIOS domain name; immutable after joining.
+# samba_ad_member_domain: EXAMPLE
+
+# Required DNS hostname of an existing DC used for joining.
+# samba_ad_member_server: dc1.ad.example.com
+
+# Domain account delegated permission to join computers.
+samba_ad_member_join_username: Administrator
+
+# Join secret; required for an initial or forced join.
+# samba_ad_member_join_password: "{{ vault_samba_join_password }}"
+
+# Join authentication: required (Kerberos only) or desired (NTLM fallback).
+samba_ad_member_join_use_kerberos: required
+
+# Rejoin on every run; enable only for deliberate trust repair.
+samba_ad_member_force_join: false
+
+# Stable member computer name, at most 15 characters.
+samba_ad_member_netbios_name: '{{ ansible_facts.hostname | upper }}'
+
+# Domain backend: ad (RFC2307), rid, or autorid. Changes require ID migration.
+samba_ad_member_idmap_backend: ad
+
+# Inclusive ad/rid domain range; RFC2307 IDs must already be inside it.
+# Keep all ranges disjoint from local and subordinate UID/GID allocations.
+samba_ad_member_idmap_range: 70000-99999
+
+# Disjoint writable tdb range for BUILTIN and unmapped domains with ad/rid.
+samba_ad_member_idmap_default_range: 65536-69999
+
+# Autorid pool, replacing both ranges above; incomplete trailing blocks are unused.
+samba_ad_member_idmap_autorid_range: 65536-99999
+
+# IDs per autorid block, at least 2000; the pool must fit at least two whole blocks.
+samba_ad_member_idmap_autorid_rangesize: 10000
+
+# Read the primary GID from the AD user's gidNumber instead of primaryGroupID.
+samba_ad_member_ad_unix_primary_group: true
+
+# Read unixHomeDirectory and loginShell from AD with the ad backend.
+samba_ad_member_ad_unix_nss_info: true
+
+# Allow unqualified domain names in NSS; false retains DOMAIN\name.
+samba_ad_member_winbind_use_default_domain: false
+
+# Fallback home path; Samba substitutions are supported, directories are not created.
+samba_ad_member_template_homedir: /home/%D/%U
+
+# Fallback login shell; PAM login configuration is outside this role.
+samba_ad_member_template_shell: /bin/bash
+
+# Native global options; role-owned identity/idmap settings take precedence.
+# Values are scalars; Samba lists are strings. Replacing this dictionary replaces its defaults.
+samba_ad_member_global_options:
+  server min protocol: SMB3
+  server signing: mandatory
+  server smb encrypt: required
+  client signing: required
+  map to guest: Never
+  restrict anonymous: 2
+  disable netbios: true
+  smb ports: '445'
+  load printers: false
+  disable spoolss: true
+  printing: bsd
+  printcap name: /dev/null
+  logging: file
+  log file: /var/log/samba/log.samba
+  log level: '1 auth_audit:4'
+  max log size: 10000
+  winbind refresh tickets: true
+  winbind enum users: false
+  winbind enum groups: false
+
+# Native options inherited by every share; item options merge over this dictionary.
+# A VFS override replaces the entire stack. See README.md and docs/security.md for details.
+samba_ad_member_share_options:
+  browseable: true
+  read only: true
+  guest ok: false
+  inherit acls: true
+  map acl inherit: true
+  store dos attributes: true
+  vfs objects: full_audit acl_xattr recycle
+  acl_xattr:ignore system acls: false
+  recycle:repository: .recycle
+  recycle:keeptree: true
+  recycle:versions: true
+  recycle:directory_mode: '0770'
+  recycle:subdir_mode: '0770'
+  full_audit:prefix: 'samba_audit|%u|%I|%S'
+  full_audit:success: connect disconnect create_file mkdirat renameat unlinkat fset_nt_acl
+  full_audit:failure: all
+  full_audit:syslog: false
+
+# Manage share roots by default; per-share manage_directory overrides this policy.
+# Disable for dynamic %U/%S paths or externally managed roots; additional directories still apply.
+samba_ad_member_manage_directory: true
+
+# Default owner for managed directories; local/qualified AD name or numeric UID.
+samba_ad_member_directory_owner: root
+
+# Default group for managed directories; local/qualified AD name or numeric GID.
+samba_ad_member_directory_group: root
+
+# Non-recursive directory mode; group bits also set the POSIX access ACL mask.
+samba_ad_member_directory_mode: '0770'
+
+# Action for declared ACL entries: present or absent (explicit revocation).
+samba_ad_member_directory_acl_state: present
+
+# Default ACL entries; item acls replaces this list. Unlisted existing ACLs are preserved.
+# Fields: etype (user/group/mask/other), entity, permissions, default (bool), state.
+# default: true declares inheritance; acls: [] applies no entries, it does not clear ACLs.
+samba_ad_member_directory_acls: []
+
+# Persistent SELinux type for managed directory trees on SELinux-enabled hosts.
+samba_ad_member_directory_setype: samba_share_t
+
+# Shares require name and absolute path; removing entries preserves stored data.
+# Optional root fields: owner, group, mode, acls, setype, manage_directory; options holds Samba settings.
+# directories lists extra paths (relative to a concrete share path or absolute), with the same
+# owner/group/mode/acls/setype overrides. Each directory falls back to the role-wide defaults.
+samba_ad_member_shares: []
+# Examples below assume existing RFC2307 users/groups in the configured ID range.
+# samba_ad_member_shares:
+#   # Private user folders: \\fileserver\Profiles$\Documents for the connected user.
+#   # %U is resolved by Samba; repeat the concrete alice entries for other accounts.
+#   # The inherited .recycle stays inside each private user directory.
+#   - name: Profiles$
+#     path: /srv/samba/profiles/%U
+#     manage_directory: false
+#     directories:
+#       - path: /srv/samba
+#         mode: '0755'
+#         acls: []
+#       - path: /srv/samba/profiles
+#         mode: '0711'
+#         acls: []
+#       - path: /srv/samba/profiles/alice
+#         owner: 'EXAMPLE\alice'
+#         mode: '0700'
+#         acls: []
+#       - path: /srv/samba/profiles/alice/Documents
+#         owner: 'EXAMPLE\alice'
+#         mode: '0700'
+#         acls: []
+#       - path: /srv/samba/profiles/alice/Pictures
+#         owner: 'EXAMPLE\alice'
+#         mode: '0700'
+#         acls: []
+#     options:
+#       valid users: 'EXAMPLE\%U'
+#       browseable: false
+#       read only: false
+#       create mask: '0600'
+#       directory mask: '0700'
+#       csc policy: disable  # No Offline Files caching for profile data.
+#
+#   # Group drive: \\fileserver\Projects, with reader and writer AD groups.
+#   # Access ACLs apply to the root; default ACLs are inherited by new contents and .recycle.
+#   - name: Projects
+#     path: /srv/samba/projects
+#     owner: root
+#     group: 'EXAMPLE\File Writers'
+#     mode: '2770'
+#     acls:
+#       - {etype: group, entity: 'EXAMPLE\File Readers', permissions: r-x}
+#       - {etype: group, entity: 'EXAMPLE\File Writers', permissions: rwx}
+#       - {etype: user, permissions: rwx, default: true}
+#       - {etype: group, permissions: '---', default: true}
+#       - {etype: group, entity: 'EXAMPLE\File Readers', permissions: r-x, default: true}
+#       - {etype: group, entity: 'EXAMPLE\File Writers', permissions: rwx, default: true}
+#       - {etype: mask, permissions: rwx, default: true}
+#       - {etype: other, permissions: '---', default: true}
+#     options:
+#       valid users: '@"EXAMPLE\File Readers" @"EXAMPLE\File Writers"'
+#       read list: '@"EXAMPLE\File Readers"'
+#       write list: '@"EXAMPLE\File Writers"'
+#       create mask: '0660'
+#       directory mask: '0770'
+#       access based share enum: true
+#       hide unreadable: true

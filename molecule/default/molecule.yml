@@ -1,0 +1,209 @@
+---
+# role: samba_ad_member
+# file: molecule/default/molecule.yml
+
+dependency:
+  name: "galaxy"
+  options:
+    requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    role-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+driver:
+  name: "podman"
+provisioner:
+  name: "ansible"
+  config_options:
+    defaults:
+      forks: 8
+      interpreter_python: "auto_silent"
+      allow_world_readable_tmpfiles: true
+      callbacks_enabled: "ansible.builtin.default"
+      callback_result_format: "yaml"
+      remote_tmp: "/tmp/.ansible/tmp"
+    ssh_connection:
+      pipelining: true
+  log: true
+  playbooks:
+    converge: "../resources/playbooks/converge.yml"
+    verify: "../resources/playbooks/verify.yml"
+    prepare: "../resources/playbooks/prepare.yml"
+    side_effect: "../resources/playbooks/side_effect.yml"
+  connection_options:
+    ansible_user: "molecule"
+  inventory:
+    group_vars:
+      all:
+        samba_ad_member_realm: "AD.MEMBER.TEST"
+        samba_ad_member_domain: "EXAMPLE"
+        samba_ad_member_server: "dc-member.ad.member.test"
+        samba_ad_member_join_password: "Molecule-Only-Adm1n!"
+        __samba_ad_member_test_password: "Molecule-Only-Us3r!"
+        samba_ad_member_idmap_backend: "ad"
+        samba_ad_member_shares:
+          - name: "Projects"
+            path: "/srv/samba/projects"
+            mode: "2770"
+            acls:
+              - etype: "group"
+                entity: "EXAMPLE\\File Readers"
+                permissions: "r-x"
+              - etype: "group"
+                entity: "EXAMPLE\\File Writers"
+                permissions: "rwx"
+              - etype: "user"
+                permissions: "rwx"
+                default: true
+              - etype: "group"
+                permissions: "---"
+                default: true
+              - etype: "group"
+                entity: "EXAMPLE\\File Readers"
+                permissions: "r-x"
+                default: true
+              - etype: "group"
+                entity: "EXAMPLE\\File Writers"
+                permissions: "rwx"
+                default: true
+              - etype: "mask"
+                permissions: "rwx"
+                default: true
+              - etype: "other"
+                permissions: "---"
+                default: true
+            directories:
+              - path: "/srv/samba"
+                mode: "0755"
+              - path: "/srv/samba/.snapshots"
+                mode: "0755"
+              - path: "/srv/samba/.snapshots/projects"
+                mode: "0755"
+            options:
+              valid users: "@\"EXAMPLE\\File Readers\" @\"EXAMPLE\\File Writers\""
+              read list: "@\"EXAMPLE\\File Readers\""
+              write list: "@\"EXAMPLE\\File Writers\""
+              vfs objects: "full_audit shadow_copy2 acl_xattr recycle"
+              shadow:snapdir: "/srv/samba/.snapshots/projects"
+              shadow:basedir: "/srv/samba/projects"
+              shadow:format: "@GMT-%Y.%m.%d-%H.%M.%S"
+              shadow:localtime: false
+              shadow:sort: "desc"
+              shadow:fixinodes: true
+          - name: "Redirected$$"
+            path: "/srv/samba/redirected"
+            mode: "0711"
+            directories:
+              - path: "writer"
+                owner: "EXAMPLE\\writer"
+                mode: "0700"
+              - path: "writer/Documents"
+                owner: "EXAMPLE\\writer"
+                mode: "0700"
+            options:
+              read only: false
+              browseable: false
+              valid users: "@\"EXAMPLE\\Domain Users\""
+              csc policy: "documents"
+              recycle:repository: "%U/.recycle"
+              create mask: "0600"
+              directory mask: "0700"
+          - name: "Personal"
+            path: "/srv/samba/redirected/%U"
+            manage_directory: false
+            directories:
+              - path: "/srv/samba/redirected/writer/Pictures"
+                owner: "EXAMPLE\\writer"
+                mode: "0700"
+            options:
+              read only: false
+              browseable: false
+              valid users: "EXAMPLE\\%U"
+              create mask: "0600"
+              directory mask: "0700"
+    host_vars:
+      sam-rid:
+        samba_ad_member_idmap_backend: "rid"
+      sam-autorid:
+        samba_ad_member_idmap_backend: "autorid"
+verifier:
+  name: "ansible"
+scenario:
+  test_sequence:
+    - "dependency"
+    - "destroy"
+    - "syntax"
+    - "create"
+    - "prepare"
+    - "converge"
+    - "idempotence"
+    - "check"
+    - "verify"
+    - "side_effect"
+    - "destroy"
+  name: "default"
+platforms:
+  - pre_build_image: true
+    override_command: false
+    systemd: "true"
+    privileged: true
+    network: "sam-member-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+    name: "sam-member-dc"
+    hostname: "dc-member"
+    image: "docker.io/jomrr/molecule-debian:latest"
+    groups:
+      - "samba_ad_member_dc"
+  - pre_build_image: true
+    override_command: false
+    systemd: "true"
+    privileged: true
+    network: "sam-member-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+      - "--tmpfs=/srv/samba:rw,size=256m,mode=0755"
+    name: "sam-member"
+    hostname: "sam-member"
+    image: "docker.io/jomrr/molecule-${img:-fedora}:${tag:-latest}"
+    groups:
+      - "samba_ad_member_members"
+  - pre_build_image: true
+    override_command: false
+    systemd: "true"
+    privileged: true
+    network: "sam-member-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+      - "--tmpfs=/srv/samba:rw,size=256m,mode=0755"
+    name: "sam-rid"
+    hostname: "sam-rid"
+    image: "docker.io/jomrr/molecule-debian:latest"
+    groups:
+      - "samba_ad_member_members"
+  - pre_build_image: true
+    override_command: false
+    systemd: "true"
+    privileged: true
+    network: "sam-member-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+      - "--tmpfs=/srv/samba:rw,size=256m,mode=0755"
+    name: "sam-autorid"
+    hostname: "sam-autorid"
+    image: "docker.io/jomrr/molecule-debian:latest"
+    groups:
+      - "samba_ad_member_members"

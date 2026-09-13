@@ -1,0 +1,48 @@
+---
+# role: samba_ad_member
+# file: tasks/directory.yml
+
+- name: SAMBA_AD_MEMBER | Require a concrete managed directory path
+  ansible.builtin.assert:
+    that:
+      - __samba_ad_member_directory_path is abs
+      - __samba_ad_member_directory_path is not search('%[A-Za-z]')
+    fail_msg: >-
+      Managed directories need absolute paths without Samba substitutions.
+      Set manage_directory=false for dynamic shares and declare their directories with absolute paths.
+
+- name: SAMBA_AD_MEMBER | Create a shared directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __samba_ad_member_directory_path }}"
+    state: directory
+    owner: "{{ __samba_ad_member_directory.owner | default(samba_ad_member_directory_owner) }}"
+    group: "{{ __samba_ad_member_directory.group | default(samba_ad_member_directory_group) }}"
+    mode: "{{ __samba_ad_member_directory.mode | default(samba_ad_member_directory_mode) }}"
+
+- name: SAMBA_AD_MEMBER | Manage directory access and inheritance
+  become: true
+  become_user: root
+  ansible.posix.acl:
+    path: "{{ __samba_ad_member_directory_path }}"
+    entity: "{{ __samba_ad_member_acl.entity | default(omit) }}"
+    etype: "{{ __samba_ad_member_acl.etype }}"
+    permissions: "{{ __samba_ad_member_acl.permissions | default(omit) }}"
+    default: "{{ __samba_ad_member_acl.default | default(omit) }}"
+    state: "{{ __samba_ad_member_acl.state | default(samba_ad_member_directory_acl_state) }}"
+    recalculate_mask: no_mask
+  loop: "{{ __samba_ad_member_directory.acls | default(samba_ad_member_directory_acls) }}"
+  loop_control:
+    loop_var: __samba_ad_member_acl
+    label: "{{ __samba_ad_member_acl.etype }}:{{ __samba_ad_member_acl.entity | default('') }}"
+
+- name: SAMBA_AD_MEMBER | Persist the shared directory SELinux context
+  become: true
+  become_user: root
+  community.general.sefcontext:
+    target: "{{ __samba_ad_member_directory_path | regex_escape }}(/.*)?"
+    setype: "{{ __samba_ad_member_directory.setype | default(samba_ad_member_directory_setype) }}"
+    state: present
+  when: ansible_facts.selinux.status == 'enabled'
+  notify: relabel shared directories

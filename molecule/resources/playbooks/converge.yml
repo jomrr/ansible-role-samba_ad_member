@@ -1,0 +1,9 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/playbooks/converge.yml
+
+- name: SAMBA_AD_MEMBER | Converge AD file server members
+  hosts: samba_ad_member_members
+  gather_facts: true
+  roles:
+    - role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"

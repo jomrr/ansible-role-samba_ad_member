@@ -1,0 +1,38 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+
+[global]
+{% for __samba_ad_member_key, __samba_ad_member_value in samba_ad_member_global_options.items() %}
+    {{ __samba_ad_member_key }} = {{ ('yes' if __samba_ad_member_value else 'no') if __samba_ad_member_value is boolean else __samba_ad_member_value }}
+{% endfor %}
+    server role = member server
+    security = ADS
+    realm = {{ samba_ad_member_realm | upper }}
+    workgroup = {{ samba_ad_member_domain | upper }}
+    netbios name = {{ samba_ad_member_netbios_name | upper }}
+    winbind use default domain = {{ samba_ad_member_winbind_use_default_domain | ternary('yes', 'no') }}
+    template homedir = {{ samba_ad_member_template_homedir }}
+    template shell = {{ samba_ad_member_template_shell }}
+{% if samba_ad_member_idmap_backend == 'autorid' %}
+    idmap config * : backend = autorid
+    idmap config * : range = {{ samba_ad_member_idmap_autorid_range }}
+    idmap config * : rangesize = {{ samba_ad_member_idmap_autorid_rangesize }}
+{% else %}
+    idmap config * : backend = tdb
+    idmap config * : range = {{ samba_ad_member_idmap_default_range }}
+    idmap config {{ samba_ad_member_domain | upper }} : backend = {{ samba_ad_member_idmap_backend }}
+    idmap config {{ samba_ad_member_domain | upper }} : range = {{ samba_ad_member_idmap_range }}
+{% if samba_ad_member_idmap_backend == 'ad' %}
+    idmap config {{ samba_ad_member_domain | upper }} : schema_mode = rfc2307
+    idmap config {{ samba_ad_member_domain | upper }} : unix_primary_group = {{ samba_ad_member_ad_unix_primary_group | ternary('yes', 'no') }}
+    idmap config {{ samba_ad_member_domain | upper }} : unix_nss_info = {{ samba_ad_member_ad_unix_nss_info | ternary('yes', 'no') }}
+{% endif %}
+{% endif %}
+{% for __samba_ad_member_share in samba_ad_member_shares %}
+
+[{{ __samba_ad_member_share.name }}]
+{% for __samba_ad_member_key, __samba_ad_member_value in (samba_ad_member_share_options | combine(__samba_ad_member_share.options | default({}))).items() %}
+    {{ __samba_ad_member_key }} = {{ ('yes' if __samba_ad_member_value else 'no') if __samba_ad_member_value is boolean else __samba_ad_member_value }}
+{% endfor %}
+    path = {{ __samba_ad_member_share.path }}
+{% endfor %}

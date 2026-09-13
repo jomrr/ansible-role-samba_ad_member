@@ -1,0 +1,18 @@
+---
+# role: samba_ad_member
+# file: meta/main.yml
+
+galaxy_info:
+  author: Jonas Mauer
+  description: Join Samba AD members with winbind, RFC2307 identity mapping, and managed file shares.
+  galaxy_tags:
+    - samba
+    - activedirectory
+    - winbind
+    - fileserver
+    - rfc2307
+  issue_tracker_url: https://github.com/jomrr/ansible-role-samba_ad_member/issues
+  license: MIT
+  min_ansible_version: "2.20"
+  namespace: jomrr
+  role_name: samba_ad_member

@@ -1,0 +1,18 @@
+---
+# role: samba_ad_member
+# file: vars/Suse.yml
+
+__samba_ad_member_packages:
+  - samba
+  - samba-winbind
+  - samba-python3
+  - krb5-client
+  - acl
+__samba_ad_member_nsswitch_sources:
+  - /usr/etc/nsswitch.conf
+__samba_ad_member_smb_service: smb
+__samba_ad_member_nmb_service: nmb
+__samba_ad_member_winbind_service: winbind
+__samba_ad_member_config: /etc/samba/smb.conf
+__samba_ad_member_validate: /usr/bin/testparm --suppress-prompt %s
+__samba_ad_member_restorecon: /usr/sbin/restorecon

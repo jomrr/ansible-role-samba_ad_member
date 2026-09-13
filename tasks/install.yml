@@ -1,0 +1,22 @@
+---
+# role: samba_ad_member
+# file: tasks/install.yml
+
+- name: SAMBA_AD_MEMBER | Install Samba, winbind, and filesystem tools
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: "{{ __samba_ad_member_packages }}"
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: SAMBA_AD_MEMBER | Create the Samba configuration directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __samba_ad_member_config | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'

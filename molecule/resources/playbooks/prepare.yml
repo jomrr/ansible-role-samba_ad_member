@@ -1,0 +1,187 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/playbooks/prepare.yml
+
+- name: SAMBA_AD_MEMBER | Prepare test hosts
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_MEMBER | Refresh Debian package metadata
+      become: true
+      become_user: root
+      ansible.builtin.apt:
+        update_cache: true
+      when: ansible_facts.pkg_mgr == 'apt'
+
+- name: SAMBA_AD_MEMBER | Prepare the existing RFC2307 domain
+  hosts: samba_ad_member_dc
+  gather_facts: true
+  module_defaults:
+    group/jomrr.samba.all:
+      server: dc-member.ad.member.test
+      realm: AD.MEMBER.TEST
+      bind_username: Administrator
+      bind_password: "{{ samba_ad_member_join_password }}"
+  tasks:
+    - name: SAMBA_AD_MEMBER | Install domain controller fixture packages
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: [samba-ad-dc, samba-ad-provision, samba-dsdb-modules, samba-vfs-modules, python3-samba, winbind]
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: SAMBA_AD_MEMBER | Reserve DC fallback IDs below the RFC2307 identities
+      become: true
+      become_user: root
+      ansible.builtin.replace:
+        path: /usr/share/samba/setup/idmap_init.ldif
+        regexp: "{{ __samba_ad_member_bound.regexp }}"
+        replace: "{{ __samba_ad_member_bound.value }}"
+      loop:
+        - {regexp: '^lowerBound: .*', value: 'lowerBound: 65536'}
+        - {regexp: '^upperBound: .*', value: 'upperBound: 69999'}
+      loop_control:
+        loop_var: __samba_ad_member_bound
+        label: "{{ __samba_ad_member_bound.value }}"
+
+    - name: SAMBA_AD_MEMBER | Resolve the DC fixture FQDN
+      become: true
+      become_user: root
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^\s*{{ ansible_facts.default_ipv4.address | regex_escape }}\s+'
+        line: "{{ ansible_facts.default_ipv4.address }} dc-member.ad.member.test dc-member"
+        unsafe_writes: true
+
+    - name: SAMBA_AD_MEMBER | Remove the distribution sample configuration before provisioning
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/samba/smb.conf
+        state: absent
+
+    - name: SAMBA_AD_MEMBER | Provision the test domain
+      become: true
+      become_user: root
+      jomrr.samba.samba_provision:
+        realm: AD.MEMBER.TEST
+        domain: EXAMPLE
+        hostname: dc-member
+        use_rfc2307: true
+        admin_password: "{{ samba_ad_member_join_password }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Forward external DNS queries to the container network
+      become: true
+      become_user: root
+      ansible.builtin.lineinfile:
+        path: /etc/samba/smb.conf
+        insertafter: '^\[global\]'
+        regexp: '^\s*dns forwarder\s*='
+        line: "    dns forwarder = {{ ansible_facts.dns.nameservers | first }}"
+
+    - name: SAMBA_AD_MEMBER | Stop standalone services on the DC fixture
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: "{{ __samba_ad_member_service }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop: [smbd, nmbd, winbind]
+      loop_control:
+        loop_var: __samba_ad_member_service
+        label: "{{ __samba_ad_member_service }}"
+
+    - name: SAMBA_AD_MEMBER | Start the fixture domain controller
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: samba-ad-dc
+        enabled: true
+        masked: false
+        state: started
+
+    - name: SAMBA_AD_MEMBER | Resolve the test realm through AD DNS
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: "nameserver 127.0.0.1\nsearch ad.member.test\n"
+        mode: '0644'
+        unsafe_writes: true
+
+    - name: SAMBA_AD_MEMBER | Wait for directory authentication
+      ansible.builtin.wait_for:
+        port: 389
+        timeout: 60
+
+    - name: SAMBA_AD_MEMBER | Assign a fixed primary group GID
+      jomrr.samba.samba_group:
+        name: Domain Users
+        gid_number: 71000
+
+    - name: SAMBA_AD_MEMBER | Create test accounts with fixed RFC2307 identities
+      jomrr.samba.samba_user:
+        username: "{{ __samba_ad_member_account.name }}"
+        password: "{{ __samba_ad_member_test_password }}"
+        uid_number: "{{ __samba_ad_member_account.uid }}"
+        gid_number: 71000
+        unix_home_directory: "/home/{{ __samba_ad_member_account.name }}"
+        login_shell: /bin/bash
+      loop:
+        - {name: writer, uid: 71001}
+        - {name: reader, uid: 71002}
+        - {name: outsider, uid: 71003}
+        - {name: writer2, uid: 71004}
+      loop_control:
+        loop_var: __samba_ad_member_account
+        label: "{{ __samba_ad_member_account.name }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Create access groups with fixed RFC2307 GIDs
+      jomrr.samba.samba_group:
+        name: "{{ __samba_ad_member_group.name }}"
+        gid_number: "{{ __samba_ad_member_group.gid }}"
+        members: "{{ __samba_ad_member_group.members }}"
+      loop:
+        - {name: File Writers, gid: 71010, members: [writer, writer2]}
+        - {name: File Readers, gid: 71011, members: [reader]}
+      loop_control:
+        loop_var: __samba_ad_member_group
+        label: "{{ __samba_ad_member_group.name }}"
+
+- name: SAMBA_AD_MEMBER | Prepare member prerequisites
+  hosts: samba_ad_member_members
+  gather_facts: true
+  vars:
+    __samba_ad_member_clients:
+      Debian: [smbclient, diffutils]
+      RedHat: [samba-client, diffutils]
+      Suse: [samba-client, diffutils]
+  tasks:
+    - name: SAMBA_AD_MEMBER | Install the SMB test client
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: "{{ __samba_ad_member_clients[ansible_facts.os_family] }}"
+        state: present
+
+    - name: SAMBA_AD_MEMBER | Use the fixture domain DNS
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver {{ hostvars['sam-member-dc'].ansible_facts.default_ipv4.address }}
+          search ad.member.test
+        mode: '0644'
+        unsafe_writes: true
+
+    - name: SAMBA_AD_MEMBER | Create a payload for SMB permission checks
+      ansible.builtin.copy:
+        dest: /tmp/member-payload.txt
+        content: "Samba AD member functional test\n"
+        mode: '0644'

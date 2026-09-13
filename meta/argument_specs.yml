@@ -1,0 +1,346 @@
+---
+# role: samba_ad_member
+# file: meta/argument_specs.yml
+
+argument_specs:
+  main:
+    short_description: Join an AD domain, run winbind and Samba, and manage shares and
+      directory permissions.
+    options:
+      samba_ad_member_realm:
+        type: str
+        description: AD DNS domain and Kerberos realm; immutable after joining.
+        required: true
+      samba_ad_member_domain:
+        type: str
+        description: AD NetBIOS domain name; immutable after joining.
+        required: true
+      samba_ad_member_server:
+        type: str
+        description: DNS hostname of an existing DC used for joining.
+        required: true
+      samba_ad_member_join_username:
+        type: str
+        description: Domain account delegated permission to join computers.
+        default: Administrator
+      samba_ad_member_join_password:
+        type: str
+        description: Join account password from a secret store; required for the initial
+          join or a forced rejoin.
+        no_log: true
+      samba_ad_member_join_use_kerberos:
+        type: str
+        description: Join authentication policy; desired permits NTLM fallback.
+        choices:
+          - required
+          - desired
+        default: required
+      samba_ad_member_force_join:
+        type: bool
+        description: Re-establish the machine account on every run; enable only for deliberate
+          repair.
+        default: false
+      samba_ad_member_netbios_name:
+        type: str
+        description: Member computer name, at most 15 characters; must match the host identity
+          and remain stable.
+        default: '{{ ansible_facts.hostname | upper }}'
+      samba_ad_member_idmap_backend:
+        type: str
+        description: Domain identity mapping backend; ad reads centrally assigned RFC2307
+          IDs.
+        choices:
+          - ad
+          - rid
+          - autorid
+        default: ad
+      samba_ad_member_idmap_range:
+        type: str
+        description: Inclusive domain UID/GID range for ad or rid; ad discards RFC2307 IDs
+          outside this range.
+        default: 70000-99999
+      samba_ad_member_idmap_default_range:
+        type: str
+        description: Disjoint writable tdb range for BUILTIN and unmapped domains with ad
+          or rid.
+        default: 65536-69999
+      samba_ad_member_idmap_autorid_range:
+        type: str
+        description: Inclusive autorid pool replacing the separate tdb/domain ranges; only
+          complete rangesize blocks are usable.
+        default: 65536-99999
+      samba_ad_member_idmap_autorid_rangesize:
+        type: int
+        description: IDs per autorid domain range; reserve at least two whole ranges.
+        default: 10000
+      samba_ad_member_ad_unix_primary_group:
+        type: bool
+        description: Read the primary GID from the user gidNumber instead of AD primaryGroupID.
+        default: true
+      samba_ad_member_ad_unix_nss_info:
+        type: bool
+        description: Read unixHomeDirectory and loginShell from AD with the ad backend.
+        default: true
+      samba_ad_member_winbind_use_default_domain:
+        type: bool
+        description: Allow unqualified domain names in NSS; false avoids local/domain name
+          collisions.
+        default: false
+      samba_ad_member_template_homedir:
+        type: str
+        description: Home path for rid/autorid and AD accounts without unixHomeDirectory;
+          does not create directories.
+        default: /home/%D/%U
+      samba_ad_member_template_shell:
+        type: str
+        description: Login shell for rid/autorid and AD accounts without loginShell; does
+          not configure PAM.
+        default: /bin/bash
+      samba_ad_member_global_options:
+        type: dict
+        description: Additional native global smb.conf options with scalar values; role-owned
+          identity/idmap settings take precedence.
+        default:
+          server min protocol: SMB3
+          server signing: mandatory
+          server smb encrypt: required
+          client signing: required
+          map to guest: Never
+          restrict anonymous: 2
+          disable netbios: true
+          smb ports: '445'
+          load printers: false
+          disable spoolss: true
+          printing: bsd
+          printcap name: /dev/null
+          logging: file
+          log file: /var/log/samba/log.samba
+          log level: 1 auth_audit:4
+          max log size: 10000
+          winbind refresh tickets: true
+          winbind enum users: false
+          winbind enum groups: false
+      samba_ad_member_share_options:
+        type: dict
+        description: Native options applied to every share and overridden by each share
+          options dictionary; scalar values, Samba lists as strings.
+        default:
+          browseable: true
+          read only: true
+          guest ok: false
+          inherit acls: true
+          map acl inherit: true
+          store dos attributes: true
+          vfs objects: full_audit acl_xattr recycle
+          acl_xattr:ignore system acls: false
+          recycle:repository: .recycle
+          recycle:keeptree: true
+          recycle:versions: true
+          recycle:directory_mode: '0770'
+          recycle:subdir_mode: '0770'
+          full_audit:prefix: samba_audit|%u|%I|%S
+          full_audit:success: connect disconnect create_file mkdirat renameat unlinkat fset_nt_acl
+          full_audit:failure: all
+          full_audit:syslog: false
+      samba_ad_member_manage_directory:
+        type: bool
+        description: Manage share roots by default; item manage_directory overrides this
+          policy. Explicit additional directories are always managed.
+        default: true
+      samba_ad_member_directory_owner:
+        type: str
+        description: Default owner for managed directories; accepts local names, qualified
+          AD names, or numeric IDs.
+        default: root
+      samba_ad_member_directory_group:
+        type: str
+        description: Default group for managed directories; accepts local names, qualified
+          AD names, or numeric IDs.
+        default: root
+      samba_ad_member_directory_mode:
+        type: str
+        description: Default POSIX directory mode including the access ACL mask; keep it
+          consistent with named ACL permissions.
+        default: '0770'
+      samba_ad_member_directory_acl_state:
+        type: str
+        description: Default state for declared POSIX ACL entries; absent revokes the named
+          entries.
+        choices:
+          - present
+          - absent
+        default: present
+      samba_ad_member_directory_acls:
+        type: list
+        description: Default POSIX ACL entries for managed directories; item acls replaces
+          this list. Unlisted ACL entries are preserved.
+        elements: dict
+        default: []
+        options:
+          entity:
+            type: str
+            default: ''
+            description: User or group name or numeric ID; empty for owner, owning group,
+              mask, or other.
+          etype:
+            type: str
+            required: true
+            choices:
+              - user
+              - group
+              - mask
+              - other
+            description: POSIX ACL entry type.
+          permissions:
+            type: str
+            description: POSIX permissions such as rwx or r-x; required for state present.
+          default:
+            type: bool
+            default: false
+            description: Manage a default ACL inherited by new children.
+          state:
+            type: str
+            choices:
+              - present
+              - absent
+            description: Override samba_ad_member_directory_acl_state to add/update or explicitly
+              remove this ACL entry.
+      samba_ad_member_directory_setype:
+        type: str
+        description: Persistent SELinux type for managed directory trees on SELinux-enabled
+          hosts.
+        default: samba_share_t
+      samba_ad_member_shares:
+        type: list
+        description: Shares with root permissions and optional additional directories; removing
+          entries preserves stored data.
+        elements: dict
+        default: []
+        options:
+          name:
+            type: str
+            required: true
+            description: Samba section name, including homes for dynamic home shares.
+          path:
+            type: str
+            required: true
+            description: Absolute share path; Samba substitutions require manage_directory=false.
+          options:
+            type: dict
+            default: {}
+            description: Native Samba options overriding samba_ad_member_share_options;
+              path takes precedence.
+          manage_directory:
+            type: bool
+            description: Override samba_ad_member_manage_directory for this root; false
+              publishes an externally managed or dynamic path. Explicit additional directories
+              are still managed.
+          owner:
+            type: str
+            description: Override samba_ad_member_directory_owner.
+          group:
+            type: str
+            description: Override samba_ad_member_directory_group.
+          mode:
+            type: str
+            description: Override samba_ad_member_directory_mode; includes the POSIX access
+              ACL mask.
+          acls:
+            type: list
+            elements: dict
+            options:
+              entity:
+                type: str
+                default: ''
+                description: User or group name or numeric ID; empty for owner, owning group,
+                  mask, or other.
+              etype:
+                type: str
+                required: true
+                choices:
+                  - user
+                  - group
+                  - mask
+                  - other
+                description: POSIX ACL entry type.
+              permissions:
+                type: str
+                description: POSIX permissions such as rwx or r-x; required for state present.
+              default:
+                type: bool
+                default: false
+                description: Manage a default ACL inherited by new children.
+              state:
+                type: str
+                choices:
+                  - present
+                  - absent
+                description: Override samba_ad_member_directory_acl_state to add/update
+                  or explicitly remove this ACL entry.
+            description: Replace samba_ad_member_directory_acls; unlisted ACLs remain, absent
+              entries revoke.
+          setype:
+            type: str
+            description: Override samba_ad_member_directory_setype.
+          directories:
+            type: list
+            elements: dict
+            default: []
+            description: Additional directories, in parent-before-child order. Relative
+              paths use the concrete share path; absolute paths also support external parents
+              and dynamic shares. Each item uses role-wide defaults, independently of the
+              root overrides.
+            options:
+              path:
+                type: path
+                required: true
+                description: Literal directory path without Samba substitutions; relative
+                  to a concrete share path or absolute, including paths outside the share.
+              owner:
+                type: str
+                description: Override samba_ad_member_directory_owner.
+              group:
+                type: str
+                description: Override samba_ad_member_directory_group.
+              mode:
+                type: str
+                description: Override samba_ad_member_directory_mode; includes the POSIX
+                  access ACL mask.
+              acls:
+                type: list
+                elements: dict
+                options:
+                  entity:
+                    type: str
+                    default: ''
+                    description: User or group name or numeric ID; empty for owner, owning
+                      group, mask, or other.
+                  etype:
+                    type: str
+                    required: true
+                    choices:
+                      - user
+                      - group
+                      - mask
+                      - other
+                    description: POSIX ACL entry type.
+                  permissions:
+                    type: str
+                    description: POSIX permissions such as rwx or r-x; required for state
+                      present.
+                  default:
+                    type: bool
+                    default: false
+                    description: Manage a default ACL inherited by new children.
+                  state:
+                    type: str
+                    choices:
+                      - present
+                      - absent
+                    description: Override samba_ad_member_directory_acl_state to add/update
+                      or explicitly remove this ACL entry.
+                description: Replace samba_ad_member_directory_acls; unlisted ACLs remain,
+                  absent entries revoke.
+              setype:
+                type: str
+                description: Override samba_ad_member_directory_setype.

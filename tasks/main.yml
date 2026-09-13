@@ -1,0 +1,73 @@
+---
+# role: samba_ad_member
+# file: tasks/main.yml
+
+- name: SAMBA_AD_MEMBER | Load platform settings
+  ansible.builtin.include_vars: "{{ ansible_facts.os_family }}.yml"
+
+- name: SAMBA_AD_MEMBER | Install member services and identity providers
+  ansible.builtin.import_tasks: install.yml
+
+- name: SAMBA_AD_MEMBER | Configure domain identity and shares
+  ansible.builtin.import_tasks: configure.yml
+
+- name: SAMBA_AD_MEMBER | Join the Active Directory domain
+  become: true
+  become_user: root
+  jomrr.samba.samba_join_member:
+    realm: "{{ samba_ad_member_realm | upper }}"
+    server: "{{ samba_ad_member_server }}"
+    bind_username: "{{ samba_ad_member_join_username }}"
+    bind_password: "{{ samba_ad_member_join_password | default(omit) }}"
+    use_kerberos: "{{ samba_ad_member_join_use_kerberos }}"
+    force: "{{ samba_ad_member_force_join }}"
+    state: present
+  no_log: true
+  notify:
+    - restart winbind
+    - restart samba
+
+- name: SAMBA_AD_MEMBER | Activate domain identity before resolving directory owners
+  ansible.builtin.meta: flush_handlers
+
+- name: SAMBA_AD_MEMBER | Enable and start winbind
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_member_winbind_service }}"
+    enabled: true
+    masked: false
+    state: started
+
+- name: SAMBA_AD_MEMBER | Manage share roots and permissions
+  ansible.builtin.include_tasks: directory.yml
+  vars:
+    __samba_ad_member_directory_path: "{{ __samba_ad_member_directory.path }}"
+  loop: "{{ samba_ad_member_shares }}"
+  loop_control:
+    loop_var: __samba_ad_member_directory
+    label: "{{ __samba_ad_member_directory.path }}"
+  when: __samba_ad_member_directory.manage_directory | default(samba_ad_member_manage_directory)
+
+- name: SAMBA_AD_MEMBER | Manage additional share directories
+  ansible.builtin.include_tasks: directory.yml
+  vars:
+    __samba_ad_member_directory: "{{ __samba_ad_member_share_directory.1 }}"
+    __samba_ad_member_directory_path: >-
+      {{ [__samba_ad_member_share_directory.0.path, __samba_ad_member_share_directory.1.path] | path_join }}
+  loop: "{{ samba_ad_member_shares | subelements('directories', skip_missing=True) }}"
+  loop_control:
+    loop_var: __samba_ad_member_share_directory
+    label: "{{ __samba_ad_member_directory_path }}"
+
+- name: SAMBA_AD_MEMBER | Apply persistent directory labels
+  ansible.builtin.meta: flush_handlers
+
+- name: SAMBA_AD_MEMBER | Enable and start Samba
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_member_smb_service }}"
+    enabled: true
+    masked: false
+    state: started

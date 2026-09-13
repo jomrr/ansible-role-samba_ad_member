@@ -1,0 +1,55 @@
+---
+# role: samba_ad_member
+# file: tasks/configure.yml
+
+- name: SAMBA_AD_MEMBER | Render and validate Samba configuration
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: "{{ __samba_ad_member_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: "{{ __samba_ad_member_validate }}"
+  notify:
+    - restart winbind
+    - restart samba
+
+- name: SAMBA_AD_MEMBER | Disable the unused NetBIOS name service
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_member_nmb_service }}"
+    state: stopped
+    enabled: false
+    masked: true
+
+- name: SAMBA_AD_MEMBER | Initialize the system NSS override from platform defaults
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: "{{ __samba_ad_member_nsswitch_source }}"
+    dest: /etc/nsswitch.conf
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ __samba_ad_member_nsswitch_sources }}"
+  loop_control:
+    loop_var: __samba_ad_member_nsswitch_source
+    label: "{{ __samba_ad_member_nsswitch_source }}"
+
+- name: SAMBA_AD_MEMBER | Resolve domain users and groups through winbind
+  become: true
+  become_user: root
+  ansible.builtin.lineinfile:
+    path: /etc/nsswitch.conf
+    regexp: "^{{ __samba_ad_member_database }}:"
+    line: "{{ __samba_ad_member_database }}: files systemd winbind"
+  loop: [passwd, group]
+  loop_control:
+    loop_var: __samba_ad_member_database
+    label: "{{ __samba_ad_member_database }}"

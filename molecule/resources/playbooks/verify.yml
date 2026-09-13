@@ -1,0 +1,349 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/playbooks/verify.yml
+
+- name: SAMBA_AD_MEMBER | Verify identity mapping and SMB access
+  hosts: samba_ad_member_members
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_MEMBER | Check the machine trust
+      become: true
+      become_user: root
+      ansible.builtin.command: wbinfo --check-secret
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Resolve a domain identity through NSS
+      ansible.builtin.getent:
+        database: passwd
+        key: 'EXAMPLE\writer'
+
+    - name: SAMBA_AD_MEMBER | Check exact RFC2307 identity and NSS attributes
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][1] == '71001'
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][2] == '71000'
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][4] == '/home/writer'
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][5] == '/bin/bash'
+      when: samba_ad_member_idmap_backend == 'ad'
+
+    - name: SAMBA_AD_MEMBER | Verify algorithmic backends use their configured range
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][1] | int >= 65536
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][1] | int <= 99999
+          - ansible_facts.getent_passwd['EXAMPLE\writer'][1] != '71001'
+      when: samba_ad_member_idmap_backend != 'ad'
+
+    - name: SAMBA_AD_MEMBER | Verify group access and a common recycle bin for multiple users
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - //localhost/Projects
+          - --client-protection=encrypt
+          - -U
+          - "EXAMPLE\\{{ __samba_ad_member_access.user }}"
+          - -c
+          - "{{ __samba_ad_member_access.command }}"
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      loop:
+        - {user: writer, command: 'mkdir inherited'}
+        - {user: writer, command: 'put /tmp/member-payload.txt inherited/payload.txt'}
+        - {user: reader, command: 'get inherited/payload.txt /tmp/member-readback.txt'}
+        - {user: writer, command: 'put /tmp/member-payload.txt inherited/recycled.txt'}
+        - {user: writer, command: 'del inherited/recycled.txt'}
+        - {user: reader, command: 'get .recycle/inherited/recycled.txt /tmp/member-recycled.txt'}
+        - {user: writer2, command: 'rename .recycle/inherited/recycled.txt inherited/restored.txt'}
+        - {user: reader, command: 'get inherited/restored.txt /tmp/member-restored.txt'}
+        - {user: writer2, command: 'put /tmp/member-payload.txt inherited/recycled.txt'}
+        - {user: writer2, command: 'del inherited/recycled.txt'}
+        - {user: writer, command: 'get .recycle/inherited/recycled.txt /tmp/member-second-recycled.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_access
+        label: "{{ __samba_ad_member_access.user }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Compare shared and recovered file contents
+      ansible.builtin.command:
+        argv: [cmp, /tmp/member-payload.txt, "{{ __samba_ad_member_readback }}"]
+      changed_when: false
+      loop:
+        - /tmp/member-readback.txt
+        - /tmp/member-recycled.txt
+        - /tmp/member-restored.txt
+        - /tmp/member-second-recycled.txt
+      loop_control:
+        loop_var: __samba_ad_member_readback
+
+    - name: SAMBA_AD_MEMBER | Verify private folders and their user-owned recycle bins
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - "//localhost/{{ __samba_ad_member_private_access.share }}"
+          - -U
+          - 'EXAMPLE\writer'
+          - -c
+          - "{{ __samba_ad_member_private_access.command }}"
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      loop:
+        - {share: Redirected$, command: 'put /tmp/member-payload.txt writer/Documents/payload.txt'}
+        - {share: Redirected$, command: 'put /tmp/member-payload.txt writer/Pictures/payload.txt'}
+        - {share: Redirected$, command: 'put /tmp/member-payload.txt writer/Documents/recycled.txt'}
+        - {share: Redirected$, command: 'del writer/Documents/recycled.txt'}
+        - {share: Redirected$,
+           command: 'get writer/.recycle/writer/Documents/recycled.txt /tmp/member-redirected-recycled.txt'}
+        - {share: Personal, command: 'put /tmp/member-payload.txt Documents/private.txt'}
+        - {share: Personal, command: 'del Documents/private.txt'}
+        - {share: Personal, command: 'get .recycle/Documents/private.txt /tmp/member-personal-recycled.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_private_access
+        label: "{{ __samba_ad_member_private_access.share }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Compare the files recovered from private recycle bins
+      ansible.builtin.command:
+        argv: [cmp, /tmp/member-payload.txt, "{{ __samba_ad_member_private_readback }}"]
+      changed_when: false
+      loop: [/tmp/member-redirected-recycled.txt, /tmp/member-personal-recycled.txt]
+      loop_control:
+        loop_var: __samba_ad_member_private_readback
+
+    - name: SAMBA_AD_MEMBER | Change a Windows ACL through SMB
+      ansible.builtin.command:
+        argv:
+          - smbcacls
+          - "//localhost/{{ __samba_ad_member_windows_acl.share }}"
+          - "{{ __samba_ad_member_windows_acl.path }}"
+          - -U
+          - 'EXAMPLE\writer'
+          - --modify
+          - 'ACL:EXAMPLE\writer:ALLOWED/0x0/FULL'
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      loop:
+        - {share: Projects, path: inherited/payload.txt}
+        - {share: Redirected$, path: writer/Documents/payload.txt}
+      loop_control:
+        loop_var: __samba_ad_member_windows_acl
+        label: "{{ __samba_ad_member_windows_acl.share }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Verify the Windows ACL is persisted in protected storage
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import os
+            for path in ('projects/inherited/payload.txt', 'redirected/writer/Documents/payload.txt'):
+                assert os.getxattr('/srv/samba/' + path, 'security.NTACL')
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Check denied writes and cross-user access
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - "//localhost/{{ __samba_ad_member_denied.share }}"
+          - -U
+          - "EXAMPLE\\{{ __samba_ad_member_denied.user }}"
+          - -c
+          - "{{ __samba_ad_member_denied.command }}"
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_denial
+      changed_when: false
+      failed_when: >-
+        'NT_STATUS_ACCESS_DENIED' not in __samba_ad_member_denial.stdout
+      loop:
+        - {user: reader, share: Projects, command: 'put /tmp/member-payload.txt denied.txt'}
+        - {user: reader, share: Projects, command: 'del .recycle/inherited/recycled.txt'}
+        - {user: outsider, share: Projects, command: ls}
+        - {user: reader, share: Redirected$, command: 'get writer/Documents/payload.txt /tmp/private-leak.txt'}
+        - {user: reader, share: Redirected$,
+           command: 'get writer/.recycle/Documents/private.txt /tmp/private-recycle-leak.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_denied
+        label: "{{ __samba_ad_member_denied.user }}:{{ __samba_ad_member_denied.share }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Verify the server activates session encryption
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json
+            import os
+            import subprocess
+            from samba import credentials
+            from samba.samba3 import param, libsmb_samba_internal
+
+            lp = param.get_context()
+            lp.load("/etc/samba/smb.conf")
+            creds = credentials.Credentials()
+            creds.guess(lp)
+            creds.set_domain("EXAMPLE")
+            creds.set_username("writer")
+            creds.set_password(os.environ["PASSWD"])
+            creds.set_kerberos_state(credentials.DONT_USE_KERBEROS)
+            conn = libsmb_samba_internal.Conn("localhost", "Projects", lp, creds)
+            conn.echo()
+            status = json.loads(subprocess.check_output(["smbstatus", "--json"], text=True))
+            sessions = [s for s in status["sessions"].values()
+                        if s["username"].lower() == "example\\writer"]
+            assert sessions, "Missing test session"
+            assert all(s["encryption"]["degree"] == "full" for s in sessions), sessions
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Reject clients restricted to SMB2
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - //localhost/Projects
+          - --no-pass
+          - --max-protocol=SMB2_10
+          - --command=ls
+      register: __samba_ad_member_legacy_protocol
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_legacy_protocol.rc == 0 or
+        'NT_STATUS_NOT_SUPPORTED' not in __samba_ad_member_legacy_protocol.stdout
+
+    - name: SAMBA_AD_MEMBER | Verify anonymous share and IPC access is denied
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - "//localhost/{{ __samba_ad_member_anonymous_share }}"
+          - --user=
+          - --no-pass
+          - --command=ls
+      register: __samba_ad_member_guest
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_guest.rc == 0 or
+        'NT_STATUS_ACCESS_DENIED' not in __samba_ad_member_guest.stdout
+      loop: [Projects, IPC$]
+      loop_control:
+        loop_var: __samba_ad_member_anonymous_share
+
+    - name: SAMBA_AD_MEMBER | Verify the NetBIOS name service is masked
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - --property=UnitFileState
+          - --value
+          - "{{ __samba_ad_member_test_nmb_services[ansible_facts.os_family] }}"
+      vars:
+        __samba_ad_member_test_nmb_services:
+          Debian: nmbd
+          RedHat: nmb
+          Suse: nmb
+      register: __samba_ad_member_nmb_state
+      changed_when: false
+      failed_when: __samba_ad_member_nmb_state.stdout != 'masked'
+
+    - name: SAMBA_AD_MEMBER | Verify successful authentication is audited
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - grep
+          - --extended-regexp
+          - 'Auth:.*writer.*NT_STATUS_OK'
+          - /var/log/samba/log.samba
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Verify file deletion and ACL changes are logged
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - grep
+          - --extended-regexp
+          - "{{ __samba_ad_member_audit_event }}"
+          - /var/log/samba/log.samba
+      changed_when: false
+      loop:
+        - 'samba_audit\|.*writer\|.*\|Projects\|unlinkat\|ok\|.*recycled.txt'
+        - 'samba_audit\|.*writer\|.*\|Projects\|fset_nt_acl\|ok\|.*payload.txt'
+      loop_control:
+        loop_var: __samba_ad_member_audit_event
+
+    - name: SAMBA_AD_MEMBER | Preserve data and ACLs in the snapshot fixture
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [cp, --archive, /srv/samba/projects,
+               /srv/samba/.snapshots/projects/@GMT-2026.01.01-00.00.00]
+        creates: /srv/samba/.snapshots/projects/@GMT-2026.01.01-00.00.00
+
+    - name: SAMBA_AD_MEMBER | Expose the snapshot fixture as a read-only filesystem
+      become: true
+      become_user: root
+      ansible.posix.mount:
+        path: /srv/samba/.snapshots/projects/@GMT-2026.01.01-00.00.00
+        src: /srv/samba/.snapshots/projects/@GMT-2026.01.01-00.00.00
+        fstype: none
+        opts: bind,ro
+        state: ephemeral
+
+    - name: SAMBA_AD_MEMBER | Enumerate previous versions using SMB
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Projects, -U, 'EXAMPLE\reader',
+               -c, 'allinfo inherited/payload.txt']
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_versions
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_versions.rc != 0 or
+        '@GMT-2026.01.01-00.00.00' not in __samba_ad_member_versions.stdout
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Remove the live file and read its previous version
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - //localhost/Projects
+          - -U
+          - "EXAMPLE\\{{ __samba_ad_member_history.user }}"
+          - -c
+          - "{{ __samba_ad_member_history.command }}"
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      loop:
+        - {user: writer, command: 'del inherited/payload.txt'}
+        - {user: reader, command: 'get @GMT-2026.01.01-00.00.00/inherited/payload.txt /tmp/member-previous.txt'}
+        - {user: writer, command: 'put /tmp/member-previous.txt inherited/payload.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_history
+        label: "{{ __samba_ad_member_history.user }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Compare the restored previous version
+      ansible.builtin.command: cmp /tmp/member-payload.txt /tmp/member-previous.txt
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Reject writes to a historical version
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Projects, -U, 'EXAMPLE\writer', -c,
+               'put /tmp/member-payload.txt @GMT-2026.01.01-00.00.00/inherited/payload.txt']
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_snapshot_write
+      changed_when: false
+      failed_when: __samba_ad_member_snapshot_write.rc == 0
+      no_log: true

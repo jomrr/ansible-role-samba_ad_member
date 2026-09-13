@@ -1,0 +1,73 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/playbooks/side_effect.yml
+
+- name: SAMBA_AD_MEMBER | Verify share updates and data preservation
+  hosts: samba_ad_member_members
+  gather_facts: true
+  tasks:
+    - name: SAMBA_AD_MEMBER | Replace the published shares
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        samba_ad_member_shares:
+          - name: Archive
+            path: /srv/samba/projects
+            options:
+              valid users: '@"EXAMPLE\File Readers" @"EXAMPLE\File Writers"'
+            mode: '2770'
+            acls:
+              - {etype: group, entity: 'EXAMPLE\File Readers', state: absent}
+              - {etype: group, entity: 'EXAMPLE\File Readers', default: true, state: absent}
+
+    - name: SAMBA_AD_MEMBER | Read existing data through the replacement share
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - //localhost/Archive
+          - -U
+          - 'EXAMPLE\writer'
+          - -c
+          - get inherited/payload.txt /tmp/member-archive.txt
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Compare preserved data
+      ansible.builtin.command: cmp /tmp/member-payload.txt /tmp/member-archive.txt
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Check that removed shares are unpublished
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Projects, -U, 'EXAMPLE\writer', -c, ls]
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_removed
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_removed.rc == 0 or
+        'NT_STATUS_BAD_NETWORK_NAME' not in __samba_ad_member_removed.stdout
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Verify revoked POSIX access is also denied over SMB
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Archive, -U, 'EXAMPLE\reader', -c,
+               'get inherited/payload.txt /tmp/member-revoked.txt']
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_smb_revoked
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_smb_revoked.rc == 0 or
+        'NT_STATUS_ACCESS_DENIED' not in __samba_ad_member_smb_revoked.stdout
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Check that the revoked directory ACL denies traversal
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [runuser, -u, 'EXAMPLE\reader', --, cat, /srv/samba/projects/inherited/payload.txt]
+      register: __samba_ad_member_revoked
+      changed_when: false
+      failed_when: __samba_ad_member_revoked.rc == 0 or 'Permission denied' not in __samba_ad_member_revoked.stderr

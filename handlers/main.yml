@@ -1,0 +1,56 @@
+---
+# role: samba_ad_member
+# file: handlers/main.yml
+
+- name: SAMBA_AD_MEMBER | Restart winbind
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_member_winbind_service }}"
+    enabled: true
+    masked: false
+    state: restarted
+  listen: restart winbind
+
+- name: SAMBA_AD_MEMBER | Restart Samba
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __samba_ad_member_smb_service }}"
+    enabled: true
+    masked: false
+    state: restarted
+  listen: restart samba
+
+- name: SAMBA_AD_MEMBER | Restore share root SELinux labels
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - "{{ __samba_ad_member_restorecon }}"
+      - -Rv
+      - "{{ __samba_ad_member_directory.path }}"
+  loop: "{{ samba_ad_member_shares }}"
+  loop_control:
+    loop_var: __samba_ad_member_directory
+    label: "{{ __samba_ad_member_directory.path }}"
+  register: __samba_ad_member_relabel
+  changed_when: "'Relabeled' in __samba_ad_member_relabel.stdout"
+  when: __samba_ad_member_directory.manage_directory | default(samba_ad_member_manage_directory)
+  listen: relabel shared directories
+
+- name: SAMBA_AD_MEMBER | Restore additional share directory SELinux labels
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - "{{ __samba_ad_member_restorecon }}"
+      - -Rv
+      - "{{ [__samba_ad_member_share_directory.0.path, __samba_ad_member_share_directory.1.path] | path_join }}"
+  loop: "{{ samba_ad_member_shares | subelements('directories', skip_missing=True) }}"
+  loop_control:
+    loop_var: __samba_ad_member_share_directory
+    label: "{{ __samba_ad_member_share_directory.1.path }}"
+  register: __samba_ad_member_relabel
+  changed_when: "'Relabeled' in __samba_ad_member_relabel.stdout"
+  listen: relabel shared directories
