@@ -4,8 +4,10 @@
 
 __samba_ad_member_packages:
   - samba
+  - samba-gpupdate
   - samba-winbind
   - samba-python3
+  - python3-cryptography
   - krb5-client
   - acl
 __samba_ad_member_nsswitch_sources:
@@ -16,3 +18,4 @@ __samba_ad_member_winbind_service: winbind
 __samba_ad_member_config: /etc/samba/smb.conf
 __samba_ad_member_validate: /usr/bin/testparm --suppress-prompt %s
 __samba_ad_member_restorecon: /usr/sbin/restorecon
+__samba_ad_member_krb5_ccache: 'KEYRING:persistent:%{uid}'

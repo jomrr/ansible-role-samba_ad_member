@@ -19,6 +19,9 @@ provisioner:
       callbacks_enabled: "ansible.builtin.default"
       callback_result_format: "yaml"
       remote_tmp: "/tmp/.ansible/tmp"
+      display_ok_hosts: false
+      display_skipped_hosts: false
+      show_task_path_on_failure: true
     ssh_connection:
       pipelining: true
   log: true

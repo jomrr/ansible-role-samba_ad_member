@@ -1,0 +1,20 @@
+---
+# role: samba_ad_member
+# file: tasks/keytab.yml
+
+- name: SAMBA_AD_MEMBER | Create a missing machine keytab without rejoining
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [net, ads, keytab, create, --machine-pass]
+    creates: "{{ samba_ad_member_keytab_path }}"
+
+- name: SAMBA_AD_MEMBER | Protect the machine keytab
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ samba_ad_member_keytab_path }}"
+    state: file
+    owner: root
+    group: root
+    mode: '0600'

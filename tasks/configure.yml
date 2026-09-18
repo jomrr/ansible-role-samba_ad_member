@@ -2,6 +2,31 @@
 # role: samba_ad_member
 # file: tasks/configure.yml
 
+- name: SAMBA_AD_MEMBER | Ensure the Kerberos configuration include directory exists
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /etc/krb5.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: SAMBA_AD_MEMBER | Configure the system Kerberos realm and keytab
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: krb5.conf.j2
+    dest: /etc/krb5.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  notify:
+    - synchronize machine keytab
+    - restart winbind
+    - restart samba
+
 - name: SAMBA_AD_MEMBER | Render and validate Samba configuration
   become: true
   become_user: root
@@ -14,6 +39,7 @@
     backup: true
     validate: "{{ __samba_ad_member_validate }}"
   notify:
+    - synchronize machine keytab
     - restart winbind
     - restart samba
 

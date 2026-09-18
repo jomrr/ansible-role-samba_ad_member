@@ -10,7 +10,10 @@ group shares. The table records the choices and their reasons.
 | SMB encryption | Required globally, including private and group data. | [BSI] A15; [CIS 3] |
 | Server/client signing | Require signatures on Samba connections. | [Samba]; [Windows] |
 | Guest and anonymous IPC access | Deny; shares require authentication. | [Samba] |
-| Authentication | ADS membership with winbind. | [Samba] |
+| Authentication | ADS membership with winbind; verify Kerberos tickets from machine secrets and the system keytab. | [Samba] |
+| System Kerberos | Configure the AD realm, DNS KDC discovery and keytab path; retain system crypto-policy snippets. | [Kerberos] |
+| Machine keytab | Built-in synchronization to a root-owned 0600 system keytab, including password rotation. | [Samba] |
+| Machine GPOs | Enable application by winbind; AD administrators control linked policies. | [Samba] |
 | Printing and NetBIOS | Disable unused services; SMB uses TCP 445. | [CIS 4] |
 | Network access | Configure trusted networks and firewalls per site. | [BSI] A2 |
 | Connection logs | `1 auth_audit:4`; bounded file rollover. | [Samba]; [CIS 8] |
@@ -39,6 +42,35 @@ and [CIS 8] provide general guidance for access, services and logging.
 BSI A5 recommends registry-managed shares. This role instead owns smb.conf
 through reviewed Ansible inventory and validates candidates with `testparm`.
 Registry administration would introduce a second configuration authority.
+
+## Machine credentials and policies
+
+The role manages `/etc/krb5.conf` before joining, so Kerberos applications use
+its AD realm even without an explicit `@REALM`. KDC discovery uses DNS SRV
+records, while realm mappings are explicit. DNS hostname canonicalization and
+reverse lookups are disabled; service names must match their AD SPNs. The
+`/etc/krb5.conf.d` include retains distribution crypto policies, without pinning
+an encryption list in the role. Existing snippets must not override the managed
+domain settings. [Kerberos]
+
+`kerberos method = secrets and keytab` enables Samba's built-in system keytab
+synchronization when `sync machine password to keytab` is unset. It exports the
+machine account, AD SPNs and host principals, including their AD key version,
+and updates them on machine password changes. The role initializes a missing
+keytab on existing members and restricts access to root. Samba owns the keytab
+contents; Ansible does not distribute machine passwords. [Samba]
+
+Upstream suggests `secrets only` with an explicit synchronization entry. This
+role instead uses the built-in synchronization because `testparm` in the tested
+Samba 4.22 and 4.23 packages rejects multiple SPN specifiers in an explicit entry.
+The built-in selection supplies the same principals while retaining native
+configuration validation on all supported platforms. [Keytab validation]
+
+`apply group policies = yes` lets winbind apply supported machine policies at
+startup and every 90-120 minutes. The selected AD policies may change local
+system configuration; do not assign GPOs that compete with Ansible for smb.conf
+or managed directory permissions. This does not configure Windows client folder
+redirection or create/link GPOs. [Samba]
 
 ## ACLs and VFS modules
 
@@ -174,3 +206,7 @@ Existing identity managers must not overwrite those NSS entries. [Authselect]
 [Authselect]: https://github.com/authselect/authselect/blob/master/src/man/authselect.8.adoc
 [Debian PAM]: https://manpages.debian.org/testing/libpam-runtime/pam-auth-update.8.en.html
 [SUSE PAM]: https://manpages.opensuse.org/Tumbleweed/pam-config/pam-config.8.en.html
+
+[Keytab validation]: https://github.com/samba-team/samba/blob/samba-4.23.5/source3/utils/testparm.c#L276
+
+[Kerberos]: https://web.mit.edu/kerberos/krb5-latest/doc/admin/conf_files/krb5_conf.html

@@ -123,6 +123,25 @@
         name: Domain Users
         gid_number: 71000
 
+    - name: SAMBA_AD_MEMBER | Publish a machine policy in the fixture domain
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - samba-tool
+          - gpo
+          - manage
+          - motd
+          - set
+          - '{31B2F340-016D-11D2-945F-00C04FB984F9}'
+          - Molecule AD member policy
+          - --URL=ldap://dc-member.ad.member.test
+          - --username=Administrator
+      environment:
+        PASSWD: "{{ samba_ad_member_join_password }}"
+      changed_when: true
+      no_log: true
+
     - name: SAMBA_AD_MEMBER | Create test accounts with fixed RFC2307 identities
       jomrr.samba.samba_user:
         username: "{{ __samba_ad_member_account.name }}"

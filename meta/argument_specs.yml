@@ -96,11 +96,18 @@ argument_specs:
         description: Login shell for rid/autorid and AD accounts without loginShell; does
           not configure PAM.
         default: /bin/bash
+      samba_ad_member_keytab_path:
+        type: path
+        description: System keytab to initialize and protect, also configured as default_keytab_name
+          in /etc/krb5.conf.
+        default: /etc/krb5.keytab
       samba_ad_member_global_options:
         type: dict
         description: Additional native global smb.conf options with scalar values; role-owned
           identity/idmap settings take precedence.
         default:
+          kerberos method: secrets and keytab
+          apply group policies: true
           server min protocol: SMB3
           server signing: mandatory
           server smb encrypt: required

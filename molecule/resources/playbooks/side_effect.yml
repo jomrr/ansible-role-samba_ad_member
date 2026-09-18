@@ -6,6 +6,29 @@
   hosts: samba_ad_member_members
   gather_facts: true
   tasks:
+    - name: SAMBA_AD_MEMBER | Rotate the machine password through winbind
+      become: true
+      become_user: root
+      ansible.builtin.command: wbinfo --change-secret
+      changed_when: true
+
+    - name: SAMBA_AD_MEMBER | Verify keytab authentication after password rotation
+      ansible.builtin.import_tasks: ../tasks/keytab.yml
+
+    - name: SAMBA_AD_MEMBER | Remove the keytab from an existing member
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/krb5.keytab
+        state: absent
+
+    - name: SAMBA_AD_MEMBER | Restore the keytab without changing the member configuration
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+    - name: SAMBA_AD_MEMBER | Verify authentication with the restored keytab
+      ansible.builtin.import_tasks: ../tasks/keytab.yml
+
     - name: SAMBA_AD_MEMBER | Replace the published shares
       ansible.builtin.include_role:
         name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"

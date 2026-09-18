@@ -1,0 +1,46 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/tasks/keytab.yml
+
+- name: SAMBA_AD_MEMBER | Read machine keytab permissions
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: /etc/krb5.keytab
+    get_checksum: false
+    get_mime: false
+  register: __samba_ad_member_keytab_stat
+
+- name: SAMBA_AD_MEMBER | Verify machine credentials are restricted to root
+  ansible.builtin.assert:
+    that:
+      - __samba_ad_member_keytab_stat.stat.isreg
+      - __samba_ad_member_keytab_stat.stat.uid == 0
+      - __samba_ad_member_keytab_stat.stat.gid == 0
+      - __samba_ad_member_keytab_stat.stat.mode == '0600'
+    quiet: true
+
+- name: SAMBA_AD_MEMBER | Obtain a machine ticket using the system realm and keytab
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - kinit
+      - -k
+      - "{{ ansible_facts.hostname | upper }}$"
+  environment:
+    KRB5CCNAME: FILE:/tmp/member-machine.ccache
+  changed_when: false
+
+- name: SAMBA_AD_MEMBER | Decrypt a current host ticket with the synchronized keytab
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - kvno
+      - -k
+      - /etc/krb5.keytab
+      - "host/{{ ansible_facts.hostname | lower }}.{{ samba_ad_member_realm | lower }}"
+  environment:
+    KRB5CCNAME: FILE:/tmp/member-machine.ccache
+  changed_when: false

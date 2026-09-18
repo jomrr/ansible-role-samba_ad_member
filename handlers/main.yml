@@ -2,6 +2,14 @@
 # role: samba_ad_member
 # file: handlers/main.yml
 
+- name: SAMBA_AD_MEMBER | Synchronize the configured machine keytab
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [net, ads, keytab, create, --machine-pass]
+  changed_when: true
+  listen: synchronize machine keytab
+
 - name: SAMBA_AD_MEMBER | Restart winbind
   become: true
   become_user: root

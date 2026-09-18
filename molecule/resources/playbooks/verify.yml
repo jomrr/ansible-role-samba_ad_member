@@ -12,6 +12,36 @@
       ansible.builtin.command: wbinfo --check-secret
       changed_when: false
 
+    - name: SAMBA_AD_MEMBER | Verify the initial machine keytab
+      ansible.builtin.import_tasks: ../tasks/keytab.yml
+
+    - name: SAMBA_AD_MEMBER | Obtain a user ticket without specifying a realm
+      ansible.builtin.command:
+        argv: [kinit, writer]
+        stdin: "{{ __samba_ad_member_test_password }}"
+      environment:
+        KRB5CCNAME: FILE:/tmp/member-user.ccache
+      changed_when: false
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Access a share using the user Kerberos ticket
+      ansible.builtin.command:
+        argv:
+          - smbclient
+          - "//{{ ansible_facts.hostname | lower }}.{{ samba_ad_member_realm | lower }}/Projects"
+          - --use-kerberos=required
+          - --use-krb5-ccache=FILE:/tmp/member-user.ccache
+          - --client-protection=encrypt
+          - -c
+          - ls
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Verify winbind applied the domain machine policy
+      ansible.builtin.wait_for:
+        path: /etc/motd
+        search_regex: '^Molecule AD member policy$'
+        timeout: 60
+
     - name: SAMBA_AD_MEMBER | Resolve a domain identity through NSS
       ansible.builtin.getent:
         database: passwd

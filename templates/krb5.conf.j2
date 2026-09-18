@@ -1,0 +1,17 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+
+includedir /etc/krb5.conf.d
+
+[libdefaults]
+    default_realm = {{ samba_ad_member_realm | upper }}
+    default_keytab_name = FILE:{{ samba_ad_member_keytab_path }}
+    default_ccache_name = {{ __samba_ad_member_krb5_ccache }}
+    dns_lookup_kdc = true
+    dns_lookup_realm = false
+    dns_canonicalize_hostname = false
+    rdns = false
+
+[domain_realm]
+    {{ samba_ad_member_realm | lower }} = {{ samba_ad_member_realm | upper }}
+    .{{ samba_ad_member_realm | lower }} = {{ samba_ad_member_realm | upper }}

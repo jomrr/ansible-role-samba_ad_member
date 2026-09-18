@@ -3,7 +3,13 @@
 # file: tasks/main.yml
 
 - name: SAMBA_AD_MEMBER | Load platform settings
-  ansible.builtin.include_vars: "{{ ansible_facts.os_family }}.yml"
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __samba_ad_member_platform_files) }}"
+  vars:
+    __samba_ad_member_platform_files:
+      files:
+        - "{{ ansible_facts.os_family }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
 
 - name: SAMBA_AD_MEMBER | Install member services and identity providers
   ansible.builtin.import_tasks: install.yml
@@ -26,6 +32,9 @@
   notify:
     - restart winbind
     - restart samba
+
+- name: SAMBA_AD_MEMBER | Initialize the machine keytab
+  ansible.builtin.import_tasks: keytab.yml
 
 - name: SAMBA_AD_MEMBER | Activate domain identity before resolving directory owners
   ansible.builtin.meta: flush_handlers

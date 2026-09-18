@@ -57,9 +57,14 @@ samba_ad_member_template_homedir: /home/%D/%U
 # Fallback login shell; PAM login configuration is outside this role.
 samba_ad_member_template_shell: /bin/bash
 
+# System keytab path, also configured as the Kerberos library default.
+samba_ad_member_keytab_path: /etc/krb5.keytab
+
 # Native global options; role-owned identity/idmap settings take precedence.
 # Values are scalars; Samba lists are strings. Replacing this dictionary replaces its defaults.
 samba_ad_member_global_options:
+  kerberos method: secrets and keytab
+  apply group policies: true
   server min protocol: SMB3
   server signing: mandatory
   server smb encrypt: required

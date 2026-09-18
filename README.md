@@ -21,6 +21,10 @@ backend reads domain-wide RFC2307 identities.
 
 - Samba and winbind packages, member configuration, domain join, enabled and
   running services.
+- System Kerberos configuration with the AD default realm, DNS KDC discovery and
+  system keytab path.
+- Machine keytab creation and synchronization; automatic application of AD
+  machine GPOs by winbind.
 - Stopped, disabled and masked NetBIOS name service; SMB uses TCP 445 by
   default.
 - NSS passwd/group databases using files, systemd, and winbind.
@@ -271,6 +275,19 @@ Default:
 samba_ad_member_template_shell: /bin/bash
 ```
 
+### `samba_ad_member_keytab_path`
+
+Type: `path`. Required: `false`.
+
+System keytab to initialize and protect, also configured as default_keytab_name
+in /etc/krb5.conf.
+
+Default:
+
+```yaml
+samba_ad_member_keytab_path: /etc/krb5.keytab
+```
+
 ### `samba_ad_member_global_options`
 
 Type: `dict`. Required: `false`.
@@ -282,6 +299,8 @@ Default:
 
 ```yaml
 samba_ad_member_global_options:
+  kerberos method: secrets and keytab
+  apply group policies: true
   server min protocol: SMB3
   server signing: mandatory
   server smb encrypt: required
@@ -438,7 +457,11 @@ samba_ad_member_shares: []
 ## Managed Files
 
 - `/etc/samba/smb.conf (complete file; previous version backed up)`
+- `/etc/krb5.conf (complete file; previous version backed up), with
+  /etc/krb5.conf.d snippets retained`
 - `/etc/nsswitch.conf (passwd and group entries)`
+- `Machine keytab at samba_ad_member_keytab_path (default /etc/krb5.keytab;
+  Samba owns its contents)`
 - `Share roots and additional directories declared in samba_ad_member_shares,
   with their POSIX ACL entries`
 - `Persistent SELinux file-context rules for declared directories when SELinux
@@ -501,6 +524,27 @@ available before AD directory owners and ACL principals are resolved.
 
 ## Operational Notes
 
+- The role configures /etc/krb5.conf before joining: unqualified Kerberos
+  principals use the AD realm, and KDCs are discovered through AD DNS.
+  Hostname-to-realm mappings cover the AD DNS domain and its subdomains. DNS
+  hostname canonicalization and reverse lookups are disabled; use service FQDNs
+  matching their AD SPNs. Existing /etc/krb5.conf.d snippets, including system
+  crypto policies, remain included; they must not conflict with the managed
+  domain settings.
+- kerberos method defaults to secrets and keytab. Leaving sync machine password
+  to keytab unset enables Samba built-in synchronization of the machine account,
+  AD SPNs and host principals with the AD key version to the system keytab. The
+  role creates a missing keytab on existing members without rejoining and
+  enforces root ownership and mode 0600. Configuration changes refresh the
+  keytab; winbind synchronizes subsequent machine password changes.
+  samba_ad_member_keytab_path also sets the system Kerberos default keytab path.
+  Preserve kerberos method when overriding global_options.
+- apply group policies defaults to true. The role installs the platform GPO
+  tools; winbind applies machine policies at startup and every 90-120 minutes.
+  This uses the GPO extensions supported by the installed Samba version. GPO
+  creation/linking and Windows client folder redirection remain outside the
+  role. Avoid GPOs that also manage the role-owned smb.conf or directory
+  permissions.
 - The minimum server protocol defaults to SMB3 (Samba alias SMB3_11).
   defaults/main.yml contains the defaults and a compact share example; the
   argument reference and examples below describe the full model.
