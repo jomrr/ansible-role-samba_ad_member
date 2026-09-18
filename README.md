@@ -28,7 +28,7 @@ backend reads domain-wide RFC2307 identities.
 - Stopped, disabled and masked NetBIOS name service; SMB uses TCP 445 by
   default.
 - NSS passwd/group databases using files, systemd, and winbind.
-- Authoritative Samba share definitions, concrete directories, access/default
+- Authoritative Samba share definitions, static share roots, access/default
   POSIX ACL entries, and persistent SELinux directory labels.
 
 ### Not Managed
@@ -37,8 +37,10 @@ backend reads domain-wide RFC2307 identities.
   identity, clock synchronization, or firewall rules.
 - PAM, local domain logins, SSSD, domain leave, automatic rejoin, or domain
   migrations.
-- Windows Group Policy folder-redirection settings, client drive mappings,
-  quotas, storage mounts, or recursive replacement of existing file permissions.
+- Windows share and filesystem ACLs, AD home/profile path assignments, and
+  Windows client GPOs.
+- Client drive mappings, quotas, storage mounts, or recursive replacement of
+  existing file permissions.
 
 ## Requirements
 
@@ -352,101 +354,76 @@ samba_ad_member_share_options:
   full_audit:syslog: false
 ```
 
-### `samba_ad_member_manage_directory`
+### `samba_ad_member_share_owner`
 
-Type: `bool`. Required: `false`.
+Type: `str`. Required: `false`.
 
-Manage share roots by default; item manage_directory overrides this policy.
-Explicit additional directories are always managed.
+Default owner for share roots; accepts local names, qualified AD names, or
+numeric IDs.
 
 Default:
 
 ```yaml
-samba_ad_member_manage_directory: true
+samba_ad_member_share_owner: root
 ```
 
-### `samba_ad_member_directory_owner`
+### `samba_ad_member_share_group`
 
 Type: `str`. Required: `false`.
 
-Default owner for managed directories; accepts local names, qualified AD names,
-or numeric IDs.
+Default group for share roots; accepts local names, qualified AD names, or
+numeric IDs.
 
 Default:
 
 ```yaml
-samba_ad_member_directory_owner: root
+samba_ad_member_share_group: root
 ```
 
-### `samba_ad_member_directory_group`
+### `samba_ad_member_share_mode`
 
 Type: `str`. Required: `false`.
 
-Default group for managed directories; accepts local names, qualified AD names,
-or numeric IDs.
-
-Default:
-
-```yaml
-samba_ad_member_directory_group: root
-```
-
-### `samba_ad_member_directory_mode`
-
-Type: `str`. Required: `false`.
-
-Default POSIX directory mode including the access ACL mask; keep it consistent
+Default POSIX share root mode including the access ACL mask; keep it consistent
 with named ACL permissions.
 
 Default:
 
 ```yaml
-samba_ad_member_directory_mode: '0770'
+samba_ad_member_share_mode: '0770'
 ```
 
-### `samba_ad_member_directory_acl_state`
-
-Type: `str`. Required: `false`.
-
-Default state for declared POSIX ACL entries; absent revokes the named entries.
-
-Default:
-
-```yaml
-samba_ad_member_directory_acl_state: present
-```
-
-### `samba_ad_member_directory_acls`
+### `samba_ad_member_share_acls`
 
 Type: `list`. Required: `false`.
 
-Default POSIX ACL entries for managed directories; item acls replaces this list.
+Default POSIX ACL entries for share roots; item acls replaces this list.
 Unlisted ACL entries are preserved.
 
 Default:
 
 ```yaml
-samba_ad_member_directory_acls: []
+samba_ad_member_share_acls: []
 ```
 
-### `samba_ad_member_directory_setype`
+### `samba_ad_member_share_setype`
 
 Type: `str`. Required: `false`.
 
-Persistent SELinux type for managed directory trees on SELinux-enabled hosts.
+Persistent SELinux type for share directory trees on SELinux-enabled hosts.
 
 Default:
 
 ```yaml
-samba_ad_member_directory_setype: samba_share_t
+samba_ad_member_share_setype: samba_share_t
 ```
 
 ### `samba_ad_member_shares`
 
 Type: `list`. Required: `false`.
 
-Shares with root permissions and optional additional directories; removing
-entries preserves stored data.
+Shares with permissions for their static root directory; removing entries
+preserves stored data.
 
 Default:
 
@@ -462,10 +439,10 @@ samba_ad_member_shares: []
 - `/etc/nsswitch.conf (passwd and group entries)`
 - `Machine keytab at samba_ad_member_keytab_path (default /etc/krb5.keytab;
   Samba owns its contents)`
-- `Share roots and additional directories declared in samba_ad_member_shares,
-  with their POSIX ACL entries`
-- `Persistent SELinux file-context rules for declared directories when SELinux
-  is enabled`
+- `Static share roots declared in samba_ad_member_shares, with their POSIX ACL
+  entries`
+- `Persistent SELinux file-context rules for share roots when SELinux is
+  enabled`
 
 ## Check Mode
 
@@ -491,181 +468,22 @@ available before AD directory owners and ACL principals are resolved.
 
 ## Security Notes
 
-- Secure defaults require SMB3 (the SMB3_11 alias), SMB encryption and server
-  signing, deny guests and anonymous IPC$ access, disable printing and NetBIOS,
-  and require signing in Samba client tools. Clients without SMB 3.1.1 and
-  encryption support cannot connect.
-- Authentication/authorization events use log level "1 auth_audit:4" and file
-  logging to /var/log/samba/log.samba with a 10000 KiB rollover limit.
-  full_audit also records selected file opens, namespace/ACL changes and failed
-  VFS operations there. Protect and centrally collect logs; configure retention
-  and storage monitoring separately.
-- Settings, reasons and departures from the cited recommendations are described
-  in [docs/security.md](docs/security.md), with references to Samba, BSI, CIS
-  and Windows signing guidance.
-- Restrict allowed hosts/networks with deployment-specific global hosts
-  allow/hosts deny options and firewall policy, including IPv6 and loopback. No
-  generic network allow-list can identify trusted clients.
-- Replacing global_options replaces the entire default dictionary under normal
-  Ansible precedence; preserve its security settings when adding native options.
-  A share cannot relax globally required encryption. Mixed encryption policies
-  require a deliberate global policy change.
-- NTLM policy for domain users belongs on the DCs. The member ntlm auth
-  parameter only governs local passdb authentication. The Kerberos join setting
-  is not a Kerberos-only SMB client policy.
-- Join credentials belong in Vault or another secret store; the join task is
-  redacted.
-- Shares default to read-only and deny guest access. Share access controls and
-  filesystem ACLs both apply; write list alone cannot grant filesystem write
-  permission.
-- Directory management is non-recursive. Removing shares or directory entries
-  preserves data. ACLs are additive unless a listed entry has state: absent;
-  omitting an old ACL does not revoke it.
+- See [Security considerations](docs/security.md) for security defaults,
+  decisions and sources.
 
 ## Operational Notes
 
-- The role configures /etc/krb5.conf before joining: unqualified Kerberos
-  principals use the AD realm, and KDCs are discovered through AD DNS.
-  Hostname-to-realm mappings cover the AD DNS domain and its subdomains. DNS
-  hostname canonicalization and reverse lookups are disabled; use service FQDNs
-  matching their AD SPNs. Existing /etc/krb5.conf.d snippets, including system
-  crypto policies, remain included; they must not conflict with the managed
-  domain settings.
-- kerberos method defaults to secrets and keytab. Leaving sync machine password
-  to keytab unset enables Samba built-in synchronization of the machine account,
-  AD SPNs and host principals with the AD key version to the system keytab. The
-  role creates a missing keytab on existing members without rejoining and
-  enforces root ownership and mode 0600. Configuration changes refresh the
-  keytab; winbind synchronizes subsequent machine password changes.
-  samba_ad_member_keytab_path also sets the system Kerberos default keytab path.
-  Preserve kerberos method when overriding global_options.
-- apply group policies defaults to true. The role installs the platform GPO
-  tools; winbind applies machine policies at startup and every 90-120 minutes.
-  This uses the GPO extensions supported by the installed Samba version. GPO
-  creation/linking and Windows client folder redirection remain outside the
-  role. Avoid GPOs that also manage the role-owned smb.conf or directory
-  permissions.
-- The minimum server protocol defaults to SMB3 (Samba alias SMB3_11).
-  defaults/main.yml contains the defaults and a compact share example; the
-  argument reference and examples below describe the full model.
-- Share items require name and path. owner, group, mode, acls and setype manage
-  the share root; options contains native Samba settings. Each optional property
-  falls back to its role-wide default. manage_directory defaults to
-  samba_ad_member_manage_directory (true). Set it false for externally managed
-  roots or dynamic %U/%S paths; explicit additional directories are still
-  managed.
-- A share directories list declares additional paths with owner, group, mode,
-  acls and setype overrides. Relative paths use a concrete share path; absolute
-  paths support common parents, external snapshot directories and dynamic
-  shares. Each item independently uses role-wide defaults, not the share root
-  overrides. Declare explicit parents before children. Roots are managed first,
-  then additional directories.
-- ACL entries require etype (user, group, mask or other); entity selects a named
-  principal or is empty for base entries. permissions declares access, default:
-  true declares inheritance, and state: absent revokes an entry without
-  permissions. An item acls list replaces the role-wide list; acls: [] applies
-  no entries and does not remove existing or filesystem-inherited ACLs.
-- Identity mapping: ad uses uidNumber/gidNumber unchanged; idmap_range is an
-  inclusive filter, not an allocator. Defaults reserve 65536-69999 for the tdb
-  catch-all and 70000-99999 for the domain; RFC2307 values must fall inside the
-  domain range. These lie above the usual login.defs UID_MAX/GID_MAX of 60000
-  and reserved IDs 65534/65535, and below the usual subordinate-ID allocation
-  starting at 100000. Custom login.defs limits, existing accounts and
-  subuid/subgid assignments still need disjoint ranges. Configure ID ranges
-  consistently on every member.
-- rid derives IDs from RIDs and the domain range start. Identical configuration
-  gives consistent IDs for that domain, but ignores RFC2307 values. autorid
-  allocates ranges locally and does not guarantee identical IDs across
-  independently initialized members; preserve and back up autorid.tdb. Neither
-  backend migrates existing file ownership.
-- autorid replaces the separate tdb/domain ranges with the pool 65536-99999 and
-  rangesize=10000. Samba uses three whole blocks spanning 65536-95535; the
-  remaining 4464 IDs are unused. BUILTIN and local/well-known SID mappings also
-  consume blocks, and larger RIDs need extension blocks. The compact pool has
-  limited capacity for additional domains or extensions. The upstream rangesize
-  of 100000 cannot fit the required minimum of two blocks into this pool.
-- Do not change realm, domain, netbios_name, backend, or ranges on an
-  established file server without planning identity and ownership migration.
-  force_join is only for explicitly repairing the existing machine trust.
-- Shares use native smb.conf option names. Values are strings, numbers, or YAML
-  booleans (rendered as yes/no); Samba lists are strings with native quoting,
-  for example valid users: '@"EXAMPLE\File Readers" @"EXAMPLE\File Writers"'.
-  Item options merge over samba_ad_member_share_options. The path field is
-  authoritative. Role-owned global identity settings follow global_options and
-  take precedence.
-- testparm validates the candidate file before installation. It is a
-  syntax/consistency check, not an access test; some unknown options only
-  produce warnings. VFS-specific options require their corresponding module and
-  any additional distribution packages.
-- The former separate directory list is replaced by share root properties and
-  nested directories. Existing shares now manage their roots by default;
-  preserve their intended owner, group, mode and ACLs when migrating, or
-  explicitly disable root management. For multiple exports of one directory,
-  give one share responsibility for its permissions. Shared parents must allow
-  traversal; define their own policy explicitly instead of relying on
-  file-module parent creation.
-- POSIX ACLs are the default. Set a suitable access mask through directory mode
-  (the group mode bits); ACL tasks preserve that mask. For inherited default
-  ACLs, explicitly declare owner, owning group, mask, and other entries
-  alongside named principals to make inheritance clear. Existing children retain
-  their permissions.
-- The default VFS stack is full_audit acl_xattr streams_xattr recycle, with
-  acl_xattr:ignore system acls: false, so POSIX permissions remain enforced. Set
-  vfs objects in share_options or an individual share options dictionary to an
-  ordered, space-separated module list. This replaces the entire stack; retain
-  the default modules when adding others. Keep full_audit first to observe
-  operations before recycle transforms deletions. An empty string disables the
-  stack. Module parameters use native Samba names in the same dictionary.
-- streams_xattr stores alternate data streams such as client-supplied
-  Zone.Identifier in user.DosStream.* xattrs. Keep its native prefix and
-  stream-type defaults. Filesystem xattr limits, including on Btrfs, constrain
-  stream sizes; this supports small Windows metadata, not arbitrary NTFS stream
-  sizes. Backups and local file copies must preserve xattrs. The module does not
-  create zone information.
-- Keep streams_xattr before recycle: the reverse order aborts smbd when deleting
-  a file with ADS on the tested Samba 4.24.6 systems. With the selected order,
-  Samba removes ADS before recycling the base file. Recovery from .recycle
-  restores ordinary file data without its streams, including Zone.Identifier.
-  This loss is deliberately accepted; see [docs/security.md](docs/security.md)
-  for the rationale and sources.
-- Each share uses .recycle with preserved paths and versioning. Group drives
-  have a common bin; user-specific shares keep it inside the private share root.
-  The 0770 creation modes allow group permissions and inherited named ACLs,
-  excluding others. Samba creates the bin on first deletion; it and its nested
-  paths automatically inherit the share directory default ACLs and setgid group.
-  No separate recycle directory or ACL configuration is needed. Recycled files
-  retain their ownership and ACLs: reading requires file access, restoring into
-  the live tree requires write access.
-- For private user folders under a common, non-writable share root, use
-  recycle:repository: "%U/.recycle". A share already rooted in the private user
-  directory uses the default .recycle without an override. The deleting user
-  needs a writable destination on the same filesystem. Destination failures can
-  cause permanent deletion; recycle is not a backup or retention system.
-  Creation modes and default ACL inheritance affect new directories, without
-  rewriting existing permissions. Previous repositories are not renamed or
-  merged automatically.
-- Leading-dot names are valid in Windows 11. Samba marks .recycle hidden by
-  default; Explorer can open the UNC path or show hidden items. Setting hide dot
-  files=false for the share makes all leading-dot entries visible.
-- full_audit:syslog=false sends records through Samba logging at debug level 1.
-  The defaults record connect, disconnect, create_file, mkdirat, renameat,
-  unlinkat and fset_nt_acl successes and all VFS failures. Successful I/O chunks
-  are not individually logged. Native operation names are Samba-version
-  dependent; invalid names refuse share connections and need a functional
-  connection check.
-- acl_xattr forces dos filemode=true, allowing writers to change ACLs through
-  SMB. Coordinate Windows ACL edits with Ansible, which reapplies declared POSIX
-  entries. Samba can use POSIX-derived permissions when stored ACL hashes no
-  longer match. For a deliberately Windows-only share, ignore system acls=true
-  bypasses the POSIX policy. Keep the protected security.NTACL attribute name in
-  either model.
-- Folder redirection uses separate private user directories, e.g.
-  \\fileserver\Redirected$\alice\Documents. Configure the corresponding Windows
-  GPO separately. No automatic root preexec command or world-writable directory
-  creation is installed.
-- Use read list and write list with POSIX named-group ACLs for group drives.
-  write list wins when a user belongs to both lists. Default ACLs control
-  inheritance for new files and directories.
+- The role manages each share root up to the first path component containing a
+  Samba substitution: /srv/samba/profiles/%U/Documents manages
+  /srv/samba/profiles. Root permission overrides apply there; shares using the
+  same root must agree on those settings. The full path is preserved in
+  smb.conf.
+- Root permissions are non-recursive; removing a share preserves its data.
+  Undeclared POSIX ACL entries are preserved: revoke entries with state: absent.
+  An empty acls list applies no entries. The role takes the access ACL mask from
+  the directory mode and does not recalculate it.
+- Share options merge over samba_ad_member_share_options. The share path and
+  role-owned global identity/idmap settings take precedence over native options.
 
 ## Supported Platforms
 
@@ -698,11 +516,9 @@ Minimal membership; the host resolver already uses AD DNS.
 
 ### Group drive with readers and writers
 
-Both AD groups have gidNumber values inside the configured ad range. ACLs are
-applied after winbind is running. Samba creates `.recycle` automatically on
-first deletion. The bin and its nested paths inherit the drive's default
-ACLs: readers can retrieve readable deleted files; writers can recycle files
-and restore them into the drive. No separate bin definition is needed.
+Both AD groups have gidNumber values inside the configured ad range.
+Access ACLs control the root; default ACLs pass reader/writer permissions
+to new content, including the common recycle bin.
 
 ```yaml
 samba_ad_member_shares:
@@ -720,10 +536,6 @@ samba_ad_member_shares:
          default: true}
       - {etype: mask, permissions: rwx, default: true}
       - {etype: other, permissions: '---', default: true}
-    directories:
-      - path: /srv/samba
-        mode: '0755'
-        acls: []
     options:
       comment: Shared projects
       valid users: '@"EXAMPLE\File Readers" @"EXAMPLE\File Writers"'
@@ -735,66 +547,55 @@ samba_ad_member_shares:
       hide unreadable: true
 ```
 
-### Private folders for Windows folder redirection
+### Home folders provisioned through ADUC
 
-Example for alice; expand the concrete directory list for each account. Point
-the GPO at Redirected$\%USERNAME%\Documents or Pictures.
+The role prepares the common share root. Configure its Windows ACLs separately
+following [Samba User Home Folders](https://wiki.samba.org/index.php/User_Home_Folders#Using_Windows_ACLs).
+ADUC can then create the user's home folder and permissions when assigning
+a path such as `\\server\users\alice`.
+
+`Unix Admins` is an existing delegated administration group with a `gidNumber`
+in the configured range. It provides initial access to configure the root ACLs.
 
 ```yaml
 samba_ad_member_shares:
-  - name: Redirected$
-    path: /srv/samba/redirected
-    mode: '0711'
+  - name: users
+    path: /srv/samba/users
+    owner: root
+    group: 'EXAMPLE\Unix Admins'
+    mode: '0770'
     acls: []
-    directories:
-      - path: /srv/samba
-        mode: '0755'
-        acls: []
-      - path: alice
-        owner: 'EXAMPLE\alice'
-        mode: '0700'
-        acls: []
-      - path: alice/Documents
-        owner: 'EXAMPLE\alice'
-        mode: '0700'
-        acls: []
-      - path: alice/Pictures
-        owner: 'EXAMPLE\alice'
-        mode: '0700'
-        acls: []
     options:
-      browseable: false
       read only: false
-      valid users: '@"EXAMPLE\Domain Users"'
       csc policy: documents
       recycle:repository: '%U/.recycle'
-      hide unreadable: true
-      create mask: '0600'
-      directory mask: '0700'
 ```
 
-### Share rooted in the private user directory
+### Roaming Windows profiles
 
-Reuse the private directories from the previous example. Each connection
-starts in its authenticated user's directory. The inherited repository
-`.recycle` therefore belongs to that user without a repository override.
-Disable management of the dynamic root. To manage concrete directories in
-this share instead, add their absolute paths under `directories`.
-For alice, `\\fileserver\Personal\Documents` resolves to
-`/srv/samba/redirected/alice/Documents`; the bin is
-`/srv/samba/redirected/alice/.recycle`.
+Configure the common root's Windows ACLs separately following
+[Samba Roaming Windows User Profiles](https://wiki.samba.org/index.php/Roaming_Windows_User_Profiles#Using_Windows_ACLs),
+including permission to create profile folders and private inheritance.
+Use the same mapped administration group as in the home-folder example.
+The shares remain browsable for initial ACL administration.
+
+Assign `\\server\profiles\%USERNAME%` through AD or a Windows GPO, without
+a profile-version suffix. Windows creates the versioned profile folders.
+Keep profile storage separate from redirected Documents/Pictures; caching
+is disabled on this share. Recycle repositories are private to each user.
 
 ```yaml
 samba_ad_member_shares:
-  - name: Personal
-    path: /srv/samba/redirected/%U
-    manage_directory: false
+  - name: profiles
+    path: /srv/samba/profiles
+    owner: root
+    group: 'EXAMPLE\Unix Admins'
+    mode: '0770'
+    acls: []
     options:
-      browseable: false
       read only: false
-      valid users: 'EXAMPLE\%U'
-      create mask: '0600'
-      directory mask: '0700'
+      csc policy: disable
+      recycle:repository: '%U/.recycle'
 ```
 
 ### Btrfs snapshots for Windows Previous Versions
@@ -808,11 +609,11 @@ btrfs subvolume create /srv/samba/projects
 install -d -m 0755 /srv/samba/.snapshots/projects
 ```
 
-Start with the complete Projects share above, retaining its root permissions,
-ACLs and existing `directories` entry. Add the two absolute snapshot paths
-shown below to that share's `directories` and merge the shadow options into
-its `options`. The role also labels these paths on SELinux-enabled hosts. Establish
-file labels before creating read-only snapshots. After the initial
+Start with the complete Projects share above, retaining its root permissions
+and ACLs, and merge the shadow options below into its `options`.
+Storage provisioning must manage permissions and SELinux labels for the
+external snapshot directories. Establish file labels before creating
+read-only snapshots. After the initial
 permissions and data are in place, create a read-only snapshot as root:
 
 ```sh
@@ -851,17 +652,6 @@ Sources: [Samba shadow_copy2](https://www.samba.org/samba/docs/current/man-html/
 [Btrfs subvolumes](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html).
 
 ```yaml
-# Projects directories, including the existing parent entry:
-directories:
-  - path: /srv/samba
-    mode: '0755'
-    acls: []
-  - path: /srv/samba/.snapshots
-    mode: '0755'
-    acls: []
-  - path: /srv/samba/.snapshots/projects
-    mode: '0755'
-    acls: []
 # Merge into the Projects share's options dictionary:
 options:
   vfs objects: full_audit shadow_copy2 acl_xattr streams_xattr recycle

@@ -188,6 +188,16 @@
         name: "{{ __samba_ad_member_clients[ansible_facts.os_family] }}"
         state: present
 
+    - name: SAMBA_AD_MEMBER | Prepare the storage and snapshot fixture parents
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /srv/samba/.snapshots/projects
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: SAMBA_AD_MEMBER | Use the fixture domain DNS
       become: true
       become_user: root

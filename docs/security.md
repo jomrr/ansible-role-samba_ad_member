@@ -80,7 +80,8 @@ attribute to `user.NTACL` would allow local tampering. The module forces
 `inherit acls`, `dos filemode` and `force unknown acl user` on. In particular,
 writers can change permissions through SMB. [ACL module]
 
-Ansible reapplies the declared POSIX entries on subsequent runs. Samba checks
+Windows share and filesystem ACLs are administered outside this role.
+Ansible reapplies the declared POSIX root entries on subsequent runs. Samba checks
 hashes of its stored descriptors against filesystem permissions and can fall
 back to a POSIX-derived descriptor after changes. This is not a recursive
 rewrite of child ACLs. Coordinate Windows and Ansible administration of the same

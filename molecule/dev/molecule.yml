@@ -72,13 +72,6 @@ provisioner:
               - etype: "other"
                 permissions: "---"
                 default: true
-            directories:
-              - path: "/srv/samba"
-                mode: "0755"
-              - path: "/srv/samba/.snapshots"
-                mode: "0755"
-              - path: "/srv/samba/.snapshots/projects"
-                mode: "0755"
             options:
               valid users: "@\"EXAMPLE\\File Readers\" @\"EXAMPLE\\File Writers\""
               read list: "@\"EXAMPLE\\File Readers\""
@@ -93,13 +86,6 @@ provisioner:
           - name: "Redirected$$"
             path: "/srv/samba/redirected"
             mode: "0711"
-            directories:
-              - path: "writer"
-                owner: "EXAMPLE\\writer"
-                mode: "0700"
-              - path: "writer/Documents"
-                owner: "EXAMPLE\\writer"
-                mode: "0700"
             options:
               read only: false
               browseable: false
@@ -110,17 +96,19 @@ provisioner:
               directory mask: "0700"
           - name: "Personal"
             path: "/srv/samba/redirected/%U"
-            manage_directory: false
-            directories:
-              - path: "/srv/samba/redirected/writer/Pictures"
-                owner: "EXAMPLE\\writer"
-                mode: "0700"
+            mode: "0711"
             options:
               read only: false
               browseable: false
               valid users: "EXAMPLE\\%U"
               create mask: "0600"
               directory mask: "0700"
+          - name: "Profiles"
+            path: "/srv/samba/profiles/%U"
+            mode: "0711"
+          - name: "Documents"
+            path: "/srv/samba/profiles-nested/%U/Documents"
+            mode: "0711"
     host_vars:
       sam-rid:
         samba_ad_member_idmap_backend: "rid"

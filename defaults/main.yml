@@ -107,69 +107,42 @@ samba_ad_member_share_options:
   full_audit:failure: all
   full_audit:syslog: false
 
-# Manage share roots by default; per-share manage_directory overrides this policy.
-# Disable for dynamic %U/%S paths or externally managed roots; additional directories still apply.
-samba_ad_member_manage_directory: true
+# Default owner for share roots; local/qualified AD name or numeric UID.
+samba_ad_member_share_owner: root
 
-# Default owner for managed directories; local/qualified AD name or numeric UID.
-samba_ad_member_directory_owner: root
+# Default group for share roots; local/qualified AD name or numeric GID.
+samba_ad_member_share_group: root
 
-# Default group for managed directories; local/qualified AD name or numeric GID.
-samba_ad_member_directory_group: root
+# Non-recursive share root mode; group bits also set the POSIX access ACL mask.
+samba_ad_member_share_mode: '0770'
 
-# Non-recursive directory mode; group bits also set the POSIX access ACL mask.
-samba_ad_member_directory_mode: '0770'
-
-# Action for declared ACL entries: present or absent (explicit revocation).
-samba_ad_member_directory_acl_state: present
-
-# Default ACL entries; item acls replaces this list. Unlisted existing ACLs are preserved.
-# Fields: etype (user/group/mask/other), entity, permissions, default (bool), state.
+# Default share root ACLs; item acls replaces this list. Unlisted existing ACLs are preserved.
+# Fields: etype (user/group/mask/other), entity, permissions, default (bool), state (present/absent; default present).
 # default: true declares inheritance; acls: [] applies no entries, it does not clear ACLs.
-samba_ad_member_directory_acls: []
+samba_ad_member_share_acls: []
 
-# Persistent SELinux type for managed directory trees on SELinux-enabled hosts.
-samba_ad_member_directory_setype: samba_share_t
+# Persistent SELinux type for share directory trees on SELinux-enabled hosts.
+samba_ad_member_share_setype: samba_share_t
 
 # Shares require name and absolute path; removing entries preserves stored data.
-# Optional root fields: owner, group, mode, acls, setype, manage_directory; options holds Samba settings.
-# directories lists extra paths (relative to a concrete share path or absolute), with the same
-# owner/group/mode/acls/setype overrides. Each directory falls back to the role-wide defaults.
+# The role manages the static path before the first component containing a Samba substitution.
+# Optional root fields: owner, group, mode, acls, setype; options holds Samba settings.
 samba_ad_member_shares: []
 # Examples below assume existing RFC2307 users/groups in the configured ID range.
 # samba_ad_member_shares:
-#   # Private user folders: \\fileserver\Profiles$\Documents for the connected user.
-#   # %U is resolved by Samba; repeat the concrete alice entries for other accounts.
-#   # The inherited .recycle stays inside each private user directory.
-#   - name: Profiles$
-#     path: /srv/samba/profiles/%U
-#     manage_directory: false
-#     directories:
-#       - path: /srv/samba
-#         mode: '0755'
-#         acls: []
-#       - path: /srv/samba/profiles
-#         mode: '0711'
-#         acls: []
-#       - path: /srv/samba/profiles/alice
-#         owner: 'EXAMPLE\alice'
-#         mode: '0700'
-#         acls: []
-#       - path: /srv/samba/profiles/alice/Documents
-#         owner: 'EXAMPLE\alice'
-#         mode: '0700'
-#         acls: []
-#       - path: /srv/samba/profiles/alice/Pictures
-#         owner: 'EXAMPLE\alice'
-#         mode: '0700'
-#         acls: []
+#   # Roaming profiles: \\fileserver\profiles\%USERNAME% (AD/GPO path, without version suffix).
+#   # Configure Windows root ACLs separately; Unix Admins needs an RFC2307 gidNumber.
+#   # See README.md for the corresponding Samba Wiki setup.
+#   - name: profiles
+#     path: /srv/samba/profiles
+#     owner: root
+#     group: 'EXAMPLE\Unix Admins'
+#     mode: '0770'
+#     acls: []
 #     options:
-#       valid users: 'EXAMPLE\%U'
-#       browseable: false
 #       read only: false
-#       create mask: '0600'
-#       directory mask: '0700'
-#       csc policy: disable  # No Offline Files caching for profile data.
+#       csc policy: disable
+#       recycle:repository: '%U/.recycle'
 #
 #   # Group drive: \\fileserver\Projects, with reader and writer AD groups.
 #   # Access ACLs apply to the root; default ACLs are inherited by new contents and .recycle.

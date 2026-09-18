@@ -6,6 +6,47 @@
   hosts: samba_ad_member_members
   gather_facts: true
   tasks:
+    - name: SAMBA_AD_MEMBER | Inspect static prefixes and unexpanded share paths
+      become: true
+      become_user: root
+      ansible.builtin.stat:
+        path: "{{ __samba_ad_member_path.path }}"
+        get_checksum: false
+        get_mime: false
+      loop:
+        - {path: /srv/samba/profiles, exists: true}
+        - {path: /srv/samba/profiles/%U, exists: false}
+        - {path: /srv/samba/profiles-nested, exists: true}
+        - {path: /srv/samba/profiles-nested/%U, exists: false}
+        - {path: /srv/samba/profiles-nested/Documents, exists: false}
+      loop_control:
+        loop_var: __samba_ad_member_path
+        label: "{{ __samba_ad_member_path.path }}"
+      register: __samba_ad_member_static_paths
+
+    - name: SAMBA_AD_MEMBER | Verify directory creation stops before Samba substitutions
+      ansible.builtin.assert:
+        that:
+          - __samba_ad_member_path.stat.exists == __samba_ad_member_path.__samba_ad_member_path.exists
+        quiet: true
+      loop: "{{ __samba_ad_member_static_paths.results }}"
+      loop_control:
+        loop_var: __samba_ad_member_path
+        label: "{{ __samba_ad_member_path.__samba_ad_member_path.path }}"
+
+    - name: SAMBA_AD_MEMBER | Provision private user folders for the SMB fixtures
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: "/srv/samba/redirected/{{ __samba_ad_member_path }}"
+        state: directory
+        owner: 'EXAMPLE\writer'
+        group: root
+        mode: '0700'
+      loop: [writer, writer/Documents, writer/Pictures]
+      loop_control:
+        loop_var: __samba_ad_member_path
+
     - name: SAMBA_AD_MEMBER | Check the machine trust
       become: true
       become_user: root
