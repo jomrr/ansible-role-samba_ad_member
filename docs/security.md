@@ -11,7 +11,7 @@ group shares. The table records the choices and their reasons.
 | Server/client signing | Require signatures on Samba connections. | [Samba]; [Windows] |
 | Guest and anonymous IPC access | Deny; shares require authentication. | [Samba] |
 | Authentication | ADS membership with winbind; verify Kerberos tickets from machine secrets and the system keytab. | [Samba] |
-| System Kerberos | Configure the AD realm, DNS KDC discovery and keytab path; retain system crypto-policy snippets. | [Kerberos] |
+| System Kerberos | Invoke `jomrr.krb5` for the AD realm, DNS KDC discovery and default keytab path. | [Kerberos] |
 | Machine keytab | Built-in synchronization to a root-owned 0600 system keytab, including password rotation. | [Samba] |
 | Machine GPOs | Enable application by winbind; AD administrators control linked policies. | [Samba] |
 | Printing and NetBIOS | Disable unused services; SMB uses TCP 445. | [CIS 4] |
@@ -25,7 +25,8 @@ group shares. The table records the choices and their reasons.
 | Additional VFS modules | Explicit ordered stack and native options. | [BSI] A1/A10 |
 | Identity mapping | RFC2307 `ad`; domain 70000-99999, catch-all 65536-69999. | [BSI] A6; [ID mapping]; [Login defaults] |
 | Share administration | Generate and validate the complete smb.conf. | [BSI] A2/A5 |
-| PAM integration | Native tools are appropriate for OS authentication. | [Authselect]; [BSI] A6 |
+| PAM integration | jomrr.pam owns native PAM/NSS selection; this role owns pam_winbind.conf. | [Authselect]; [BSI] A6 |
+| Offline logins | Enable cached PAM logins after successful online authentication. | [Samba]; [PAM Winbind] |
 | DNS and time | Use existing AD infrastructure. | [BSI] A7-A9 |
 | Backups | Preserve data, ACLs, xattrs, secrets and idmap state. | [BSI] A13 |
 
@@ -45,13 +46,14 @@ Registry administration would introduce a second configuration authority.
 
 ## Machine credentials and policies
 
-The role manages `/etc/krb5.conf` before joining, so Kerberos applications use
-its AD realm even without an explicit `@REALM`. KDC discovery uses DNS SRV
-records, while realm mappings are explicit. DNS hostname canonicalization and
-reverse lookups are disabled; service names must match their AD SPNs. The
-`/etc/krb5.conf.d` include retains distribution crypto policies, without pinning
-an encryption list in the role. Existing snippets must not override the managed
-domain settings. [Kerberos]
+The role invokes `jomrr.krb5` with `samba_ad_member_realm` before joining.
+It owns `/etc/krb5.conf` and `/etc/krb5.conf.d`, configures DNS SRV discovery
+and explicit realm mappings, and disables DNS hostname canonicalization and
+reverse lookups. Service names must match their AD SPNs. Its final include
+retains distribution crypto policies while giving the managed single-valued
+relations precedence over snippets.
+`samba_ad_member_keytab_path` is passed as `krb5_default_keytab`, keeping
+Samba and the Kerberos library on the same path. [Kerberos]
 
 `kerberos method = secrets and keytab` enables Samba's built-in system keytab
 synchronization when `sync machine password to keytab` is unset. It exports the
@@ -180,8 +182,22 @@ authentication files directly. [Authselect]; [Debian PAM]; [SUSE PAM]
 In particular, `authselect select winbind` manages both NSS and PAM and enables
 domain authentication for PAM consumers; it cannot merely add winbind to NSS.
 PAM logins and automatic home creation are separate choices from SMB access.
-The current role configures NSS only and does not activate PAM domain logins.
-Existing identity managers must not overwrite those NSS entries. [Authselect]
+The role invokes `jomrr.pam` with `pam_provider: winbind` before configuring
+Samba. The dependency owns the PAM stack and NSS provider selection.
+This role owns `/etc/security/pam_winbind.conf`,
+enables Kerberos authentication and selects FILE caches on Debian/Ubuntu or
+persistent KEYRING caches on Red Hat/openSUSE, matching `jomrr.krb5`.
+`pam_mkhomedir` controls home creation; pam_winbind's own home creation stays
+disabled. Native PAM module arguments take precedence over pam_winbind.conf.
+The file is read on subsequent logins without restarting winbind. [Authselect];
+[PAM Winbind]
+
+`cached_login = yes` and `winbind offline logon = yes` enable PAM logins with
+locally cached credentials after a successful online login. While offline,
+the member cannot check current AD account restrictions or obtain a new TGT.
+The offline credential cache is separate from the Kerberos ticket cache.
+Set both options to false when online-only authentication is required.
+[Samba]; [PAM Winbind]
 
 [Samba]: https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html
 [ACL module]: https://www.samba.org/samba/docs/current/man-html/vfs_acl_xattr.8.html
@@ -211,3 +227,5 @@ Existing identity managers must not overwrite those NSS entries. [Authselect]
 [Keytab validation]: https://github.com/samba-team/samba/blob/samba-4.23.5/source3/utils/testparm.c#L276
 
 [Kerberos]: https://web.mit.edu/kerberos/krb5-latest/doc/admin/conf_files/krb5_conf.html
+
+[PAM Winbind]: https://www.samba.org/samba/docs/current/man-html/pam_winbind.conf.5.html

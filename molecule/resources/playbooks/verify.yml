@@ -6,6 +6,21 @@
   hosts: samba_ad_member_members
   gather_facts: true
   tasks:
+
+    - name: SAMBA_AD_MEMBER | Authenticate through the native PAM stack and use the Kerberos cache
+      ansible.builtin.command:
+        argv:
+          - su
+          - --login
+          - --command
+          - id -u && klist -s
+          - 'EXAMPLE\writer'
+        stdin: "{{ __samba_ad_member_test_password }}"
+      environment:
+        LC_ALL: C
+      changed_when: false
+      no_log: true
+
     - name: SAMBA_AD_MEMBER | Inspect static prefixes and unexpanded share paths
       become: true
       become_user: root

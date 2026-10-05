@@ -21,13 +21,14 @@ backend reads domain-wide RFC2307 identities.
 
 - Samba and winbind packages, member configuration, domain join, enabled and
   running services.
-- System Kerberos configuration with the AD default realm, DNS KDC discovery and
-  system keytab path.
+- System Kerberos through jomrr.krb5 and native winbind PAM/NSS integration
+  through jomrr.pam.
 - Machine keytab creation and synchronization; automatic application of AD
   machine GPOs by winbind.
 - Stopped, disabled and masked NetBIOS name service; SMB uses TCP 445 by
   default.
-- NSS passwd/group databases using files, systemd, and winbind.
+- pam_winbind.conf with Kerberos authentication, cached offline logins and the
+  platform credential cache type.
 - Authoritative Samba share definitions, static share roots, access/default
   POSIX ACL entries, and persistent SELinux directory labels.
 
@@ -35,8 +36,7 @@ backend reads domain-wide RFC2307 identities.
 
 - AD users, groups, RFC2307 allocation, DNS resolver configuration, host
   identity, clock synchronization, or firewall rules.
-- PAM, local domain logins, SSSD, domain leave, automatic rejoin, or domain
-  migrations.
+- SSSD, domain leave, automatic rejoin or domain migrations.
 - Windows share and filesystem ACLs, AD home/profile path assignments, and
   Windows client GPOs.
 - Client drive mappings, quotas, storage mounts, or recursive replacement of
@@ -44,6 +44,10 @@ backend reads domain-wide RFC2307 identities.
 
 ## Requirements
 
+- Galaxy installs jomrr.krb5 and jomrr.pam through meta/requirements.yml when
+  installing this role. For a Git checkout, run ansible-galaxy role install -r
+  requirements.yml. This role invokes both dependencies before configuring Samba
+  and joining the domain.
 - Ansible Core >= 2.20; jomrr.samba >= 2.2.0 for computer_ou, ansible.posix >=
   2.0.0, and community.general >= 12.0.0.
 - An existing AD domain, working AD DNS including SRV records, a stable
@@ -59,9 +63,6 @@ backend reads domain-wide RFC2307 identities.
 - A filesystem supporting POSIX ACLs and extended attributes, including
   protected security.NTACL storage for the default acl_xattr module. Parent
   directories must allow intended users to traverse them.
-- Apply to dedicated member systems. Existing authselect or other identity
-  managers must not overwrite the role-managed passwd/group entries in
-  nsswitch.conf.
 
 ## Dependencies
 
@@ -73,6 +74,15 @@ collections:
     version: '>=12.0.0'
   - name: jomrr.samba
     version: '>=2.2.0'
+roles:
+  - name: jomrr.krb5
+    src: https://github.com/jomrr/ansible-role-krb5.git
+    scm: git
+    version: main
+  - name: jomrr.pam
+    src: https://github.com/jomrr/ansible-role-pam.git
+    scm: git
+    version: main
 ```
 
 ## Role Variables
@@ -289,13 +299,28 @@ samba_ad_member_template_shell: /bin/bash
 
 Type: `path`. Required: `false`.
 
-System keytab to initialize and protect, also configured as default_keytab_name
-in /etc/krb5.conf.
+System keytab to initialize and protect; passed to jomrr.krb5 as the Kerberos
+library default.
 
 Default:
 
 ```yaml
 samba_ad_member_keytab_path: /etc/krb5.keytab
+```
+
+### `samba_ad_member_pam_winbind_options`
+
+Type: `dict`. Required: `false`.
+
+Native pam_winbind options; the platform cache type and disabled module home
+creation are role-owned.
+
+Default:
+
+```yaml
+samba_ad_member_pam_winbind_options:
+  krb5_auth: true
+  cached_login: true
 ```
 
 ### `samba_ad_member_global_options`
@@ -328,6 +353,7 @@ samba_ad_member_global_options:
   log level: 1 auth_audit:4
   max log size: 10000
   winbind refresh tickets: true
+  winbind offline logon: true
   winbind enum users: false
   winbind enum groups: false
 ```
@@ -441,10 +467,11 @@ samba_ad_member_shares: []
 
 ## Managed Files
 
+- `/etc/krb5.conf and /etc/krb5.conf.d through jomrr.krb5`
+- `Native PAM profiles and passwd/group NSS sources through jomrr.pam`
 - `/etc/samba/smb.conf (complete file; previous version backed up)`
-- `/etc/krb5.conf (complete file; previous version backed up), with
-  /etc/krb5.conf.d snippets retained`
-- `/etc/nsswitch.conf (passwd and group entries)`
+- `/etc/security/pam_winbind.conf (root:root, mode 0644, complete file with
+  backup)`
 - `Machine keytab at samba_ad_member_keytab_path (default /etc/krb5.keytab;
   Samba owns its contents)`
 - `Static share roots declared in samba_ad_member_shares, with their POSIX ACL
@@ -465,7 +492,7 @@ a join.
 
 ## Service Behavior
 
-Configuration and join changes restart winbind and Samba. Winbind becomes
+Samba configuration and join changes restart winbind and Samba. Winbind becomes
 available before AD directory owners and ACL principals are resolved.
 
 ### Handlers
@@ -481,6 +508,21 @@ available before AD directory owners and ACL principals are resolved.
 
 ## Operational Notes
 
+- The role passes samba_ad_member_realm and samba_ad_member_keytab_path to
+  jomrr.krb5 as krb5_realm and krb5_default_keytab, and selects
+  pam_provider=winbind for jomrr.pam. Other `krb5_` and `pam_` options can be
+  set in inventory, including pam_mkhomedir and pam_authselect_force. Kerberos
+  configuration changes do not trigger this role's handlers; smb.conf changes
+  still synchronize the keytab and restart winbind and Samba.
+- jomrr.pam owns native PAM profile selection and passwd/group NSS sources.
+  samba_ad_member_pam_winbind_options configures pam_winbind.conf with
+  krb5_auth=true and cached_login=true. Offline logins also require winbind
+  offline logon=true in samba_ad_member_global_options. The platform
+  krb5_ccache_type overrides the dictionary: FILE on Debian/Ubuntu or KEYRING on
+  Red Hat/openSUSE, matching jomrr.krb5. Home creation is disabled in
+  pam_winbind itself and belongs to pam_mkhomedir. Native PAM module arguments
+  take precedence over pam_winbind.conf. No daemon restart is needed for this
+  file; subsequent logins read it.
 - The role manages each share root up to the first path component containing a
   Samba substitution: /srv/samba/profiles/%U/Documents manages
   /srv/samba/profiles. Root permission overrides apply there; shares using the
@@ -713,6 +755,7 @@ samba_ad_member_idmap_default_range: 65536-69999
 - [Samba full_audit](https://www.samba.org/samba/docs/current/man-html/vfs_full_audit.8.html)
 - [Samba shadow_copy2](https://www.samba.org/samba/docs/current/man-html/vfs_shadow_copy2.8.html)
 - [Windows file naming](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)
+- [pam_winbind configuration](https://www.samba.org/samba/docs/current/man-html/pam_winbind.conf.5.html)
 
 ## Author
 

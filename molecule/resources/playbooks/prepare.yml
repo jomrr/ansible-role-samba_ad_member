@@ -183,9 +183,10 @@
   vars:
     __samba_ad_member_clients:
       Debian: [smbclient, diffutils]
-      RedHat: [samba-client, diffutils]
+      RedHat: [samba-client, diffutils, util-linux]
       Suse: [samba-client, diffutils]
   tasks:
+
     - name: SAMBA_AD_MEMBER | Install the SMB test client
       become: true
       become_user: root

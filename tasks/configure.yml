@@ -2,31 +2,6 @@
 # role: samba_ad_member
 # file: tasks/configure.yml
 
-- name: SAMBA_AD_MEMBER | Ensure the Kerberos configuration include directory exists
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: /etc/krb5.conf.d
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-
-- name: SAMBA_AD_MEMBER | Configure the system Kerberos realm and keytab
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: krb5.conf.j2
-    dest: /etc/krb5.conf
-    owner: root
-    group: root
-    mode: '0644'
-    backup: true
-  notify:
-    - synchronize machine keytab
-    - restart winbind
-    - restart samba
-
 - name: SAMBA_AD_MEMBER | Render and validate Samba configuration
   become: true
   become_user: root
@@ -52,30 +27,13 @@
     enabled: false
     masked: true
 
-- name: SAMBA_AD_MEMBER | Initialize the system NSS override from platform defaults
+- name: SAMBA_AD_MEMBER | Configure the winbind PAM module
   become: true
   become_user: root
-  ansible.builtin.copy:
-    src: "{{ __samba_ad_member_nsswitch_source }}"
-    dest: /etc/nsswitch.conf
-    remote_src: true
-    force: false
+  ansible.builtin.template:
+    src: pam_winbind.conf.j2
+    dest: /etc/security/pam_winbind.conf
     owner: root
     group: root
     mode: '0644'
-  loop: "{{ __samba_ad_member_nsswitch_sources }}"
-  loop_control:
-    loop_var: __samba_ad_member_nsswitch_source
-    label: "{{ __samba_ad_member_nsswitch_source }}"
-
-- name: SAMBA_AD_MEMBER | Resolve domain users and groups through winbind
-  become: true
-  become_user: root
-  ansible.builtin.lineinfile:
-    path: /etc/nsswitch.conf
-    regexp: "^{{ __samba_ad_member_database }}:"
-    line: "{{ __samba_ad_member_database }}: files systemd winbind"
-  loop: [passwd, group]
-  loop_control:
-    loop_var: __samba_ad_member_database
-    label: "{{ __samba_ad_member_database }}"
+    backup: true

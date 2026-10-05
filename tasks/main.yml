@@ -11,6 +11,19 @@
       paths:
         - "{{ role_path }}/vars"
 
+- name: SAMBA_AD_MEMBER | Configure system Kerberos
+  ansible.builtin.include_role:
+    name: jomrr.krb5
+  vars:
+    krb5_realm: "{{ samba_ad_member_realm }}"
+    krb5_default_keytab: "{{ samba_ad_member_keytab_path }}"
+
+- name: SAMBA_AD_MEMBER | Configure native winbind authentication
+  ansible.builtin.include_role:
+    name: jomrr.pam
+  vars:
+    pam_provider: winbind
+
 - name: SAMBA_AD_MEMBER | Install member services and identity providers
   ansible.builtin.import_tasks: install.yml
 

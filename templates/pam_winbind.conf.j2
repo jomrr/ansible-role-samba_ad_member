@@ -1,0 +1,9 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+
+[global]
+{% for __samba_ad_member_key, __samba_ad_member_value in (samba_ad_member_pam_winbind_options | combine({
+  'krb5_ccache_type': __samba_ad_member_pam_winbind_ccache_type,
+  'mkhomedir': false})).items() %}
+{{ __samba_ad_member_key }} = {{ ('yes' if __samba_ad_member_value else 'no') if __samba_ad_member_value is boolean else __samba_ad_member_value }}
+{% endfor %}

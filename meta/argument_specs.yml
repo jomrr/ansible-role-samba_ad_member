@@ -103,9 +103,17 @@ argument_specs:
         default: /bin/bash
       samba_ad_member_keytab_path:
         type: path
-        description: System keytab to initialize and protect, also configured as default_keytab_name
-          in /etc/krb5.conf.
+        description: System keytab to initialize and protect; passed to jomrr.krb5 as the
+          Kerberos library default.
         default: /etc/krb5.keytab
+      samba_ad_member_pam_winbind_options:
+        type: dict
+        required: false
+        description: Native pam_winbind options; the platform cache type and disabled module
+          home creation are role-owned.
+        default:
+          krb5_auth: true
+          cached_login: true
       samba_ad_member_global_options:
         type: dict
         description: Additional native global smb.conf options with scalar values; role-owned
@@ -130,6 +138,7 @@ argument_specs:
           log level: 1 auth_audit:4
           max log size: 10000
           winbind refresh tickets: true
+          winbind offline logon: true
           winbind enum users: false
           winbind enum groups: false
       samba_ad_member_share_options:

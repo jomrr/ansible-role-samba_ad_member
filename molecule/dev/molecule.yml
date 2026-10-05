@@ -6,7 +6,7 @@ dependency:
   name: "galaxy"
   options:
     requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
-    role-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    role-file: "${MOLECULE_PROJECT_DIRECTORY}/requirements.yml"
 driver:
   name: "podman"
 provisioner:
@@ -26,6 +26,7 @@ provisioner:
     group_vars:
       all:
         ansible_podman_mount_detection: false
+        pam_authselect_force: true
         samba_ad_member_realm: "AD.MEMBER.TEST"
         samba_ad_member_domain: "EXAMPLE"
         samba_ad_member_server: "dc-member.ad.member.test"

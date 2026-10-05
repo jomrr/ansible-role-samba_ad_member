@@ -57,11 +57,17 @@ samba_ad_member_winbind_use_default_domain: false
 # Fallback home path; Samba substitutions are supported, directories are not created.
 samba_ad_member_template_homedir: /home/%D/%U
 
-# Fallback login shell; PAM login configuration is outside this role.
+# Fallback login shell for accounts without an AD loginShell.
 samba_ad_member_template_shell: /bin/bash
 
-# System keytab path, also configured as the Kerberos library default.
+# System keytab to initialize and protect; passed to jomrr.krb5 as the library default.
 samba_ad_member_keytab_path: /etc/krb5.keytab
+
+# Native pam_winbind options; the cache type and disabled module home creation are role-owned.
+samba_ad_member_pam_winbind_options:
+  krb5_auth: true
+  cached_login: true
+  # require_membership_of: S-1-5-21-111111111-222222222-333333333-1100  # Group SIDs, comma-separated.
 
 # Native global options; role-owned identity/idmap settings take precedence.
 # Values are scalars; Samba lists are strings. Replacing this dictionary replaces its defaults.
@@ -85,6 +91,7 @@ samba_ad_member_global_options:
   log level: '1 auth_audit:4'
   max log size: 10000
   winbind refresh tickets: true
+  winbind offline logon: true
   winbind enum users: false
   winbind enum groups: false
 

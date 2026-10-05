@@ -1,0 +1,12 @@
+---
+# role: samba_ad_member
+# file: meta/requirements.yml
+
+- name: jomrr.krb5
+  src: https://github.com/jomrr/ansible-role-krb5.git
+  scm: git
+  version: main
+- name: jomrr.pam
+  src: https://github.com/jomrr/ansible-role-pam.git
+  scm: git
+  version: main
