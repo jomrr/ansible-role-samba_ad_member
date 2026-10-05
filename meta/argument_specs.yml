@@ -19,6 +19,11 @@ argument_specs:
         type: str
         description: DNS hostname of an existing DC used for joining.
         required: true
+      samba_ad_member_computer_ou:
+        type: str
+        description: LDAP DN of the OU for new computer accounts; the OU must already exist.
+          Omitted or empty uses the domain's default computers container. Existing accounts
+          are not moved, even on a forced rejoin.
       samba_ad_member_join_username:
         type: str
         description: Domain account delegated permission to join computers.

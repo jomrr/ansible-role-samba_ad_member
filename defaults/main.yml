@@ -11,6 +11,9 @@
 # Required DNS hostname of an existing DC used for joining.
 # samba_ad_member_server: dc1.ad.example.com
 
+# Optional OU DN for new computer accounts; omitted or empty uses the domain's default computers container.
+# samba_ad_member_computer_ou: OU=Servers,DC=ad,DC=example,DC=com
+
 # Domain account delegated permission to join computers.
 samba_ad_member_join_username: Administrator
 

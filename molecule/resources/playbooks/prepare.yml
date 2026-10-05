@@ -123,6 +123,11 @@
         name: Domain Users
         gid_number: 71000
 
+    - name: SAMBA_AD_MEMBER | Create the member join OU fixture
+      jomrr.samba.samba_ou:
+        name: Members
+        path: DC=ad,DC=member,DC=test
+
     - name: SAMBA_AD_MEMBER | Publish a machine policy in the fixture domain
       become: true
       become_user: root

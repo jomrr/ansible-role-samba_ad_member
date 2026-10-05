@@ -23,6 +23,7 @@
   jomrr.samba.samba_join_member:
     realm: "{{ samba_ad_member_realm | upper }}"
     server: "{{ samba_ad_member_server }}"
+    computer_ou: "{{ samba_ad_member_computer_ou | default(omit, true) }}"
     bind_username: "{{ samba_ad_member_join_username }}"
     bind_password: "{{ samba_ad_member_join_password | default(omit) }}"
     use_kerberos: "{{ samba_ad_member_join_use_kerberos }}"

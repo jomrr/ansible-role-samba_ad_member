@@ -44,8 +44,8 @@ backend reads domain-wide RFC2307 identities.
 
 ## Requirements
 
-- Ansible Core >= 2.20; jomrr.samba >= 2.0.0, ansible.posix >= 2.0.0, and
-  community.general >= 12.0.0.
+- Ansible Core >= 2.20; jomrr.samba >= 2.2.0 for computer_ou, ansible.posix >=
+  2.0.0, and community.general >= 12.0.0.
 - An existing AD domain, working AD DNS including SRV records, a stable
   hostname/FQDN, synchronized clocks, and connectivity to the DC. The role uses
   the system Samba Python bindings.
@@ -72,7 +72,7 @@ collections:
   - name: community.general
     version: '>=12.0.0'
   - name: jomrr.samba
-    version: '>=2.0.0'
+    version: '>=2.2.0'
 ```
 
 ## Role Variables
@@ -94,6 +94,14 @@ AD NetBIOS domain name; immutable after joining.
 Type: `str`. Required: `true`.
 
 DNS hostname of an existing DC used for joining.
+
+### `samba_ad_member_computer_ou`
+
+Type: `str`. Required: `false`.
+
+LDAP DN of the OU for new computer accounts; the OU must already exist. Omitted
+or empty uses the domain's default computers container. Existing accounts are
+not moved, even on a forced rejoin.
 
 ### `samba_ad_member_join_username`
 
@@ -512,6 +520,16 @@ Minimal membership; the host resolver already uses AD DNS.
       samba_ad_member_domain: EXAMPLE
       samba_ad_member_server: dc1.ad.example.com
       samba_ad_member_join_password: "{{ vault_samba_join_password }}"
+```
+
+### Join into an organizational unit
+
+Set the OU's LDAP DN alongside the join variables above. The OU must already exist.
+This controls new computer account creation; existing accounts stay in their current
+container, including during a forced rejoin.
+
+```yaml
+samba_ad_member_computer_ou: OU=Servers,DC=ad,DC=example,DC=com
 ```
 
 ### Group drive with readers and writers
