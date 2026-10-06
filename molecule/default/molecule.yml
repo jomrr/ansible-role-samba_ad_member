@@ -30,6 +30,10 @@ provisioner:
         samba_ad_member_join_password: "Molecule-Only-Adm1n!"
         __samba_ad_member_test_password: "Molecule-Only-Us3r!"
         samba_ad_member_idmap_backend: "ad"
+        samba_ad_member_share_acls:
+          - etype: "group"
+            entity: "EXAMPLE\\File Readers"
+            permissions: "---"
         samba_ad_member_shares:
           - name: "Projects"
             path: "/srv/samba/projects"
@@ -97,7 +101,33 @@ provisioner:
             mode: "0711"
           - name: "Documents"
             path: "/srv/samba/profiles-nested/%U/Documents"
-            mode: "0711"
+            ntacl:
+              aces:
+                - trustee: "EXAMPLE\\File Writers"
+                  rights: "modify"
+                - trustee: "EXAMPLE\\File Readers"
+                  rights: "read_execute"
+          - name: "Departments"
+            path: "/srv/samba/departments"
+            options:
+              read only: false
+            ntacl:
+              owner: "EXAMPLE\\writer"
+              group: "EXAMPLE\\File Writers"
+              aces:
+                - trustee: "EXAMPLE\\writer"
+                  rights: "full"
+                - trustee: "EXAMPLE\\File Writers"
+                  rights: "modify"
+                - trustee: "EXAMPLE\\File Readers"
+                  rights: "read_execute"
+              folders:
+                Public: {}
+                Confidential:
+                  protected: true
+                  aces:
+                    - trustee: "EXAMPLE\\writer"
+                      rights: "full"
     host_vars:
       sam-rid:
         samba_ad_member_idmap_backend: "rid"

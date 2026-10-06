@@ -17,7 +17,7 @@ group shares. The table records the choices and their reasons.
 | Printing and NetBIOS | Disable unused services; SMB uses TCP 445. | [CIS 4] |
 | Network access | Configure trusted networks and firewalls per site. | [BSI] A2 |
 | Connection logs | `1 auth_audit:4`; bounded file rollover. | [Samba]; [CIS 8] |
-| File permissions | Read-only shares by default; explicit POSIX ACLs. | [BSI] A3; [CIS 3] |
+| File permissions | Read-only shares by default; POSIX ACLs or declared NTACLs. | [BSI] A3; [CIS 3] |
 | Windows ACL storage | Enable `acl_xattr`; retain POSIX enforcement. | [ACL module] |
 | Alternate data streams | Enable `streams_xattr` for Windows metadata such as zone information. | [Streams] |
 | Deleted files | One `.recycle` per share; access follows its users/groups. | [recycle] |
@@ -82,12 +82,31 @@ attribute to `user.NTACL` would allow local tampering. The module forces
 `inherit acls`, `dos filemode` and `force unknown acl user` on. In particular,
 writers can change permissions through SMB. [ACL module]
 
-Windows share and filesystem ACLs are administered outside this role.
-Ansible reapplies the declared POSIX root entries on subsequent runs. Samba checks
-hashes of its stored descriptors against filesystem permissions and can fall
-back to a POSIX-derived descriptor after changes. This is not a recursive
-rewrite of child ACLs. Coordinate Windows and Ansible administration of the same
-paths. [ACL implementation]
+Share-level permissions (`sharesec`) are administered outside this role.
+Filesystem permissions use either the POSIX fields or a share's `ntacl` definition.
+For NTACL-managed shares, only `samba_ntacl` writes ownership and permissions;
+explicit POSIX fields are rejected and role-wide POSIX defaults are ignored.
+Samba derives the POSIX permissions through the share's VFS stack. External
+`chown`, `chmod` or `setfacl` can invalidate the stored descriptor and make Samba
+fall back to a POSIX-derived descriptor. [ACL implementation]; [NTACL module]
+
+The root's `aces` are authoritative and its DACL is protected from inheritance.
+Managed `folders` inherit unless `protected: true`; their explicit ACEs are also
+authoritative. Manual Windows ACL changes to these managed definitions are
+overwritten on the next run. Domain trustees must have mapped RFC2307 IDs when
+using `idmap_ad`. Check mode cannot detect every idmap-related write failure.
+[NTACL module]
+
+For other contents, `propagate: inherit` recomputes inherited ACEs while retaining
+explicit ACEs and protected DACLs. `none` leaves their DACLs unchanged; `replace`
+removes explicit ACEs and protection, replacing them with inherited permissions.
+Use `replace` only when that replacement is intended. `propagate_owner: none`
+preserves ownership; `parent` applies the nearest managed parent's owner and group.
+These operations can traverse existing share contents. [NTACL module]
+
+Without `ntacl`, Ansible reapplies only the declared POSIX root permissions.
+Coordinate manual Windows ACL administration with those settings to avoid
+invalidating stored descriptors. [ACL implementation]
 
 Windows-only administration can explicitly select `ignore system acls: true`;
 then SMB no longer enforces the Ansible POSIX policy. This is an alternative
@@ -229,3 +248,5 @@ Set both options to false when online-only authentication is required.
 [Kerberos]: https://web.mit.edu/kerberos/krb5-latest/doc/admin/conf_files/krb5_conf.html
 
 [PAM Winbind]: https://www.samba.org/samba/docs/current/man-html/pam_winbind.conf.5.html
+
+[NTACL module]: https://github.com/jomrr/ansible-collection-samba/blob/v2.3.0/plugins/modules/samba_ntacl.py

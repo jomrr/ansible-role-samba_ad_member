@@ -2,6 +2,9 @@
 # role: samba_ad_member
 # file: tasks/main.yml
 
+- name: SAMBA_AD_MEMBER | Validate share permission models
+  ansible.builtin.import_tasks: assert.yml
+
 - name: SAMBA_AD_MEMBER | Load platform settings
   ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __samba_ad_member_platform_files) }}"
   vars:

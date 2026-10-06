@@ -1,0 +1,24 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/tasks/ntacl_conflict.yml
+
+- name: SAMBA_AD_MEMBER | Exercise a conflicting NTACL share definition
+  block:
+    - name: SAMBA_AD_MEMBER | Apply the conflicting share definition
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        samba_ad_member_shares:
+          - "{{ {'name': 'Conflicting', 'path': '/srv/samba/conflicting', 'ntacl': {'aces': []}} |
+                combine(__samba_ad_member_conflict) }}"
+
+    - name: SAMBA_AD_MEMBER | Fail when conflicting permissions were accepted
+      ansible.builtin.fail:
+        msg: The role accepted conflicting POSIX and NTACL permissions.
+  rescue:
+    - name: SAMBA_AD_MEMBER | Verify the permission assertion rejected the share
+      ansible.builtin.assert:
+        that:
+          - ansible_failed_task.name == 'SAMBA_AD_MEMBER | Reject POSIX fields on NTACL-managed shares'
+          - "'Share Conflicting: ntacl cannot be combined' in ansible_failed_result.results[0].msg"
+        quiet: true

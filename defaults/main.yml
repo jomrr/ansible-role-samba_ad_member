@@ -117,16 +117,16 @@ samba_ad_member_share_options:
   full_audit:failure: all
   full_audit:syslog: false
 
-# Default owner for share roots; local/qualified AD name or numeric UID.
+# Default owner for POSIX-managed share roots; local/qualified AD name or numeric UID.
 samba_ad_member_share_owner: root
 
-# Default group for share roots; local/qualified AD name or numeric GID.
+# Default group for POSIX-managed share roots; local/qualified AD name or numeric GID.
 samba_ad_member_share_group: root
 
-# Non-recursive share root mode; group bits also set the POSIX access ACL mask.
+# Non-recursive POSIX share root mode; group bits also set the POSIX access ACL mask.
 samba_ad_member_share_mode: '0770'
 
-# Default share root ACLs; item acls replaces this list. Unlisted existing ACLs are preserved.
+# Default POSIX share root ACLs; item acls replaces this list. Unlisted existing ACLs are preserved.
 # Fields: etype (user/group/mask/other), entity, permissions, default (bool), state (present/absent; default present).
 # default: true declares inheritance; acls: [] applies no entries, it does not clear ACLs.
 samba_ad_member_share_acls: []
@@ -137,6 +137,7 @@ samba_ad_member_share_setype: samba_share_t
 # Shares require name and absolute path; removing entries preserves stored data.
 # The role manages the static path before the first component containing a Samba substitution.
 # Optional root fields: owner, group, mode, acls, setype; options holds Samba settings.
+# ntacl replaces owner/group/mode/acls; see README.md for NTACL inheritance options.
 samba_ad_member_shares: []
 # Examples below assume existing RFC2307 users/groups in the configured ID range.
 # samba_ad_member_shares:
@@ -178,3 +179,19 @@ samba_ad_member_shares: []
 #       directory mask: '0770'
 #       access based share enum: true
 #       hide unreadable: true
+#
+#   # NTACL group drive; explicit POSIX fields must be omitted.
+#   - name: Departments
+#     path: /srv/samba/departments
+#     options:
+#       read only: false
+#     ntacl:
+#       aces:
+#         - {trustee: 'EXAMPLE\File Admins', rights: full}
+#         - {trustee: 'EXAMPLE\File Writers', rights: modify}
+#         - {trustee: 'EXAMPLE\File Readers', rights: read_execute}
+#       folders:
+#         Confidential:
+#           protected: true
+#           aces:
+#             - {trustee: 'EXAMPLE\File Admins', rights: full}

@@ -12,8 +12,8 @@ shares.
 ## Purpose
 
 Join Linux file servers to Active Directory with jomrr.samba.samba_join_member,
-run Samba and winbind, and manage shares with POSIX permissions. The default ad
-backend reads domain-wide RFC2307 identities.
+run Samba and winbind, and manage shares with POSIX permissions or filesystem
+NTACLs. The default ad backend reads domain-wide RFC2307 identities.
 
 ## Scope
 
@@ -31,16 +31,17 @@ backend reads domain-wide RFC2307 identities.
   platform credential cache type.
 - Authoritative Samba share definitions, static share roots, access/default
   POSIX ACL entries, and persistent SELinux directory labels.
+- Optional filesystem NTACLs, ownership and inheritance for share roots, managed
+  subfolders and existing contents.
 
 ### Not Managed
 
 - AD users, groups, RFC2307 allocation, DNS resolver configuration, host
   identity, clock synchronization, or firewall rules.
 - SSSD, domain leave, automatic rejoin or domain migrations.
-- Windows share and filesystem ACLs, AD home/profile path assignments, and
+- Share-level permissions (sharesec), AD home/profile path assignments, and
   Windows client GPOs.
-- Client drive mappings, quotas, storage mounts, or recursive replacement of
-  existing file permissions.
+- Client drive mappings, quotas, or storage mounts.
 
 ## Requirements
 
@@ -48,7 +49,7 @@ backend reads domain-wide RFC2307 identities.
   installing this role. For a Git checkout, run ansible-galaxy role install -r
   requirements.yml. This role invokes both dependencies before configuring Samba
   and joining the domain.
-- Ansible Core >= 2.20; jomrr.samba >= 2.2.0 for computer_ou, ansible.posix >=
+- Ansible Core >= 2.20; jomrr.samba >= 2.3.0 for samba_ntacl, ansible.posix >=
   2.0.0, and community.general >= 12.0.0.
 - An existing AD domain, working AD DNS including SRV records, a stable
   hostname/FQDN, synchronized clocks, and connectivity to the DC. The role uses
@@ -73,7 +74,7 @@ collections:
   - name: community.general
     version: '>=12.0.0'
   - name: jomrr.samba
-    version: '>=2.2.0'
+    version: '>=2.3.0'
 roles:
   - name: jomrr.krb5
     src: https://github.com/jomrr/ansible-role-krb5.git
@@ -392,8 +393,8 @@ samba_ad_member_share_options:
 
 Type: `str`. Required: `false`.
 
-Default owner for share roots; accepts local names, qualified AD names, or
-numeric IDs.
+Default owner for POSIX-managed share roots; accepts local names, qualified AD
+names, or numeric IDs.
 
 Default:
 
@@ -405,8 +406,8 @@ samba_ad_member_share_owner: root
 
 Type: `str`. Required: `false`.
 
-Default group for share roots; accepts local names, qualified AD names, or
-numeric IDs.
+Default group for POSIX-managed share roots; accepts local names, qualified AD
+names, or numeric IDs.
 
 Default:
 
@@ -418,8 +419,8 @@ samba_ad_member_share_group: root
 
 Type: `str`. Required: `false`.
 
-Default POSIX share root mode including the access ACL mask; keep it consistent
-with named ACL permissions.
+Default mode for POSIX-managed share roots including the access ACL mask; keep
+it consistent with named ACL permissions.
 
 Default:
 
@@ -431,7 +432,7 @@ samba_ad_member_share_mode: '0770'
 
 Type: `list`. Required: `false`.
 
-Default POSIX ACL entries for share roots; item acls replaces this list.
+Default ACL entries for POSIX-managed share roots; item acls replaces this list.
 Unlisted ACL entries are preserved.
 
 Default:
@@ -474,8 +475,10 @@ samba_ad_member_shares: []
   backup)`
 - `Machine keytab at samba_ad_member_keytab_path (default /etc/krb5.keytab;
   Samba owns its contents)`
-- `Static share roots declared in samba_ad_member_shares, with their POSIX ACL
-  entries`
+- `Static share roots declared in samba_ad_member_shares, with POSIX ACLs or
+  filesystem NTACLs`
+- `Subfolders and permissions declared under a share's ntacl, including
+  configured propagation to existing contents`
 - `Persistent SELinux file-context rules for share roots when SELinux is
   enabled`
 
@@ -487,6 +490,8 @@ a join.
 - A full first-run check cannot resolve domain directory owners or validate a
   configuration before its packages and join exist. Run check mode against a
   converged member.
+- NTACL checks require an existing share in smb.conf and its static root; check
+  mode does not create either.
 - force_join=true deliberately rejoins on every normal run and is not
   idempotent. Leave it false during routine management.
 
@@ -526,12 +531,17 @@ available before AD directory owners and ACL principals are resolved.
 - The role manages each share root up to the first path component containing a
   Samba substitution: /srv/samba/profiles/%U/Documents manages
   /srv/samba/profiles. Root permission overrides apply there; shares using the
-  same root must agree on those settings. The full path is preserved in
-  smb.conf.
-- Root permissions are non-recursive; removing a share preserves its data.
+  same root must agree on the permission model and settings. The full path is
+  preserved in smb.conf.
+- POSIX root permissions are non-recursive; removing a share preserves its data.
   Undeclared POSIX ACL entries are preserved: revoke entries with state: absent.
   An empty acls list applies no entries. The role takes the access ACL mask from
   the directory mode and does not recalculate it.
+- A share's ntacl uses jomrr.samba.samba_ntacl and requires acl_xattr in its
+  effective VFS stack. Explicit owner, group, mode and acls beside ntacl are
+  rejected, including null values; role-wide POSIX defaults are ignored. Set
+  ownership under ntacl.owner/group instead. Other NTACL options use the module
+  defaults when omitted.
 - Share options merge over samba_ad_member_share_options. The share path and
   role-owned global identity/idmap settings take precedence over native options.
 
@@ -607,9 +617,42 @@ samba_ad_member_shares:
       hide unreadable: true
 ```
 
+### Group drive with managed Windows filesystem ACLs
+
+Each domain trustee needs an RFC2307 UID or GID in the configured range.
+The share is writable; its filesystem NTACL grants readers read access
+and writers modification rights.
+`Confidential` has a protected DACL accessible only to File Admins.
+
+`aces` is required. Optional `folders` maps relative paths to `aces`,
+`protected`, `owner` and `group`; the module creates missing folders.
+`owner` and `group` preserve current root ownership when omitted.
+`propagate` accepts `none`, `inherit` (default) or `replace`;
+`propagate_owner` accepts `none` (default) or `parent`.
+See [Security considerations](docs/security.md) for the effect on existing permissions.
+
+```yaml
+samba_ad_member_shares:
+  - name: Departments
+    path: /srv/samba/departments
+    options:
+      read only: false
+    ntacl:
+      aces:
+        - {trustee: 'EXAMPLE\File Admins', rights: full}
+        - {trustee: 'EXAMPLE\File Writers', rights: modify}
+        - {trustee: 'EXAMPLE\File Readers', rights: read_execute}
+      folders:
+        Confidential:
+          protected: true
+          aces:
+            - {trustee: 'EXAMPLE\File Admins', rights: full}
+```
+
 ### Home folders provisioned through ADUC
 
-The role prepares the common share root. Configure its Windows ACLs separately
+This example prepares the common root and leaves its Windows ACLs
+to separate administration
 following [Samba User Home Folders](https://wiki.samba.org/index.php/User_Home_Folders#Using_Windows_ACLs).
 ADUC can then create the user's home folder and permissions when assigning
 a path such as `\\server\users\alice`.
@@ -633,7 +676,7 @@ samba_ad_member_shares:
 
 ### Roaming Windows profiles
 
-Configure the common root's Windows ACLs separately following
+This example leaves the common root's Windows ACLs to separate administration following
 [Samba Roaming Windows User Profiles](https://wiki.samba.org/index.php/Roaming_Windows_User_Profiles#Using_Windows_ACLs),
 including permission to create profile folders and private inheritance.
 Use the same mapped administration group as in the home-folder example.

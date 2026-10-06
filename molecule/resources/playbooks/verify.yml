@@ -120,6 +120,77 @@
           - ansible_facts.getent_passwd['EXAMPLE\writer'][1] != '71001'
       when: samba_ad_member_idmap_backend != 'ad'
 
+    - name: SAMBA_AD_MEMBER | Verify NTACL ownership survives repeated role runs
+      become: true
+      become_user: root
+      ansible.builtin.stat:
+        path: /srv/samba/departments
+        get_checksum: false
+        get_mime: false
+      register: __samba_ad_member_ntacl_root
+
+    - name: SAMBA_AD_MEMBER | Resolve the NTACL owning group
+      ansible.builtin.getent:
+        database: group
+        key: 'EXAMPLE\File Writers'
+
+    - name: SAMBA_AD_MEMBER | Check NTACL ownership overrides POSIX defaults
+      ansible.builtin.assert:
+        that:
+          - __samba_ad_member_ntacl_root.stat.uid == ansible_facts.getent_passwd['EXAMPLE\writer'][1] | int
+          - __samba_ad_member_ntacl_root.stat.gid == (ansible_facts.getent_group.values() | first)[1] | int
+        quiet: true
+
+    - name: SAMBA_AD_MEMBER | Exercise access granted by managed NTACLs
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Departments, -U, "EXAMPLE\\{{ __samba_ad_member_access.user }}",
+               -c, "{{ __samba_ad_member_access.command }}"]
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      changed_when: false
+      loop:
+        - {user: writer, command: 'put /tmp/member-payload.txt Public/payload.txt'}
+        - {user: writer, command: 'put /tmp/member-payload.txt Confidential/payload.txt'}
+        - {user: reader, command: 'get Public/payload.txt /tmp/member-ntacl-readback.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_access
+        label: "{{ __samba_ad_member_access.user }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Compare content read through the NTACL share
+      ansible.builtin.command: cmp /tmp/member-payload.txt /tmp/member-ntacl-readback.txt
+      changed_when: false
+
+    - name: SAMBA_AD_MEMBER | Verify NTACL write restrictions and protected folders
+      ansible.builtin.command:
+        argv: [smbclient, //localhost/Departments, -U, "EXAMPLE\\{{ __samba_ad_member_access.user }}",
+               -c, "{{ __samba_ad_member_access.command }}"]
+      environment:
+        PASSWD: "{{ __samba_ad_member_test_password }}"
+      register: __samba_ad_member_ntacl_denied
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_ntacl_denied.rc == 0 or
+        'NT_STATUS_ACCESS_DENIED' not in __samba_ad_member_ntacl_denied.stdout
+      loop:
+        - {user: reader, command: 'put /tmp/member-payload.txt Public/denied.txt'}
+        - {user: reader, command: 'get Confidential/payload.txt /tmp/member-ntacl-denied.txt'}
+        - {user: writer2, command: 'get Confidential/payload.txt /tmp/member-ntacl-denied.txt'}
+      loop_control:
+        loop_var: __samba_ad_member_access
+        label: "{{ __samba_ad_member_access.user }}"
+      no_log: true
+
+    - name: SAMBA_AD_MEMBER | Verify conflicting permission fields are rejected
+      ansible.builtin.include_tasks: ../tasks/ntacl_conflict.yml
+      loop:
+        - {owner: root}
+        - {group: root}
+        - {mode: null}
+        - {acls: []}
+      loop_control:
+        loop_var: __samba_ad_member_conflict
+
     - name: SAMBA_AD_MEMBER | Verify group access and a common recycle bin for multiple users
       ansible.builtin.command:
         argv:

@@ -165,23 +165,23 @@ argument_specs:
           full_audit:syslog: false
       samba_ad_member_share_owner:
         type: str
-        description: Default owner for share roots; accepts local names, qualified AD names,
-          or numeric IDs.
+        description: Default owner for POSIX-managed share roots; accepts local names, qualified
+          AD names, or numeric IDs.
         default: root
       samba_ad_member_share_group:
         type: str
-        description: Default group for share roots; accepts local names, qualified AD names,
-          or numeric IDs.
+        description: Default group for POSIX-managed share roots; accepts local names, qualified
+          AD names, or numeric IDs.
         default: root
       samba_ad_member_share_mode:
         type: str
-        description: Default POSIX share root mode including the access ACL mask; keep it
-          consistent with named ACL permissions.
+        description: Default mode for POSIX-managed share roots including the access ACL
+          mask; keep it consistent with named ACL permissions.
         default: '0770'
       samba_ad_member_share_acls:
         type: list
-        description: Default POSIX ACL entries for share roots; item acls replaces this
-          list. Unlisted ACL entries are preserved.
+        description: Default ACL entries for POSIX-managed share roots; item acls replaces
+          this list. Unlisted ACL entries are preserved.
         elements: dict
         default: []
         options:
@@ -242,14 +242,14 @@ argument_specs:
               path takes precedence.
           owner:
             type: str
-            description: Override samba_ad_member_share_owner.
+            description: Override samba_ad_member_share_owner; mutually exclusive with ntacl.
           group:
             type: str
-            description: Override samba_ad_member_share_group.
+            description: Override samba_ad_member_share_group; mutually exclusive with ntacl.
           mode:
             type: str
             description: Override samba_ad_member_share_mode; includes the POSIX access
-              ACL mask.
+              ACL mask. Mutually exclusive with ntacl.
           acls:
             type: list
             elements: dict
@@ -283,7 +283,78 @@ argument_specs:
                   - absent
                 description: Add/update this ACL entry or explicitly remove it with absent.
             description: Replace samba_ad_member_share_acls; unlisted ACLs remain, absent
-              entries revoke.
+              entries revoke. Mutually exclusive with ntacl.
+          ntacl:
+            type: dict
+            description: Manage filesystem NTACLs through jomrr.samba.samba_ntacl instead
+              of POSIX root permissions; requires acl_xattr.
+            options:
+              aces:
+                type: list
+                elements: dict
+                required: true
+                description: Authoritative explicit ACEs of the static share root; the root
+                  does not inherit ACEs.
+                options:
+                  trustee:
+                    type: str
+                    required: true
+                    description: User, group or well-known principal resolved to a SID by
+                      the module.
+                  rights:
+                    type: str
+                    required: true
+                    choices:
+                      - full
+                      - modify
+                      - read
+                      - read_execute
+                      - write
+                    description: Windows access rights.
+                  type:
+                    type: str
+                    choices:
+                      - allow
+                      - deny
+                    description: ACE type; the module defaults to allow.
+                  applies_to:
+                    type: str
+                    choices:
+                      - files_only
+                      - subfolders_files_only
+                      - subfolders_only
+                      - this_folder
+                      - this_folder_files
+                      - this_folder_subfolders
+                      - this_folder_subfolders_files
+                    description: ACE inheritance scope; the module defaults to this_folder_subfolders_files.
+              folders:
+                type: dict
+                description: Relative directory paths mapped to aces, protected, owner and
+                  group; missing folders are created. The module validates entries and defaults
+                  to an empty dictionary.
+              propagate:
+                type: str
+                choices:
+                  - none
+                  - inherit
+                  - replace
+                description: ACL propagation to other contents; the module defaults to inherit.
+              propagate_owner:
+                type: str
+                choices:
+                  - none
+                  - parent
+                description: Ownership propagation to other contents; the module defaults
+                  to none.
+              owner:
+                type: str
+                description: Root owner resolved by the module; must map to a UID. Omission
+                  preserves the current owner.
+              group:
+                type: str
+                description: Root group resolved by the module; must map to a GID. Omission
+                  preserves the current group.
           setype:
             type: str
             description: Override samba_ad_member_share_setype.

@@ -1,0 +1,21 @@
+---
+# role: samba_ad_member
+# file: tasks/assert.yml
+
+- name: SAMBA_AD_MEMBER | Reject POSIX fields on NTACL-managed shares
+  ansible.builtin.assert:
+    that:
+      - __samba_ad_member_share.owner is not defined
+      - __samba_ad_member_share.group is not defined
+      - __samba_ad_member_share.mode is not defined
+      - __samba_ad_member_share.acls is not defined
+    fail_msg: >-
+      Share {{ __samba_ad_member_share.name }}: ntacl cannot be combined with
+      owner, group, mode or acls, including null values. Use ntacl.owner and
+      ntacl.group for ownership; Samba derives POSIX permissions from the NTACL.
+    quiet: true
+  loop: "{{ samba_ad_member_shares }}"
+  loop_control:
+    loop_var: __samba_ad_member_share
+    label: "{{ __samba_ad_member_share.name }}"
+  when: __samba_ad_member_share.ntacl is defined

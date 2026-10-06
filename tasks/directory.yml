@@ -8,9 +8,9 @@
   ansible.builtin.file:
     path: "{{ __samba_ad_member_share.path | regex_replace('/[^/]*%.*$', '') }}"
     state: directory
-    owner: "{{ __samba_ad_member_share.owner | default(samba_ad_member_share_owner) }}"
-    group: "{{ __samba_ad_member_share.group | default(samba_ad_member_share_group) }}"
-    mode: "{{ __samba_ad_member_share.mode | default(samba_ad_member_share_mode) }}"
+    owner: "{{ omit if __samba_ad_member_share.ntacl is defined else __samba_ad_member_share.owner | default(samba_ad_member_share_owner) }}"
+    group: "{{ omit if __samba_ad_member_share.ntacl is defined else __samba_ad_member_share.group | default(samba_ad_member_share_group) }}"
+    mode: "{{ omit if __samba_ad_member_share.ntacl is defined else __samba_ad_member_share.mode | default(samba_ad_member_share_mode) }}"
   register: __samba_ad_member_directory
 
 - name: SAMBA_AD_MEMBER | Manage directory access and inheritance
@@ -28,6 +28,7 @@
   loop_control:
     loop_var: __samba_ad_member_acl
     label: "{{ __samba_ad_member_acl.etype }}:{{ __samba_ad_member_acl.entity | default('') }}"
+  when: __samba_ad_member_share.ntacl is not defined
 
 - name: SAMBA_AD_MEMBER | Persist the shared directory SELinux context
   become: true
@@ -41,3 +42,17 @@
 
 - name: SAMBA_AD_MEMBER | Apply the directory SELinux label
   ansible.builtin.meta: flush_handlers
+
+- name: SAMBA_AD_MEMBER | Manage filesystem NTACLs
+  become: true
+  become_user: root
+  jomrr.samba.samba_ntacl:
+    share: "{{ __samba_ad_member_share.name }}"
+    path: "{{ __samba_ad_member_directory.path }}"
+    aces: "{{ __samba_ad_member_share.ntacl.aces }}"
+    folders: "{{ __samba_ad_member_share.ntacl.folders | default(omit) }}"
+    propagate: "{{ __samba_ad_member_share.ntacl.propagate | default(omit) }}"
+    propagate_owner: "{{ __samba_ad_member_share.ntacl.propagate_owner | default(omit) }}"
+    owner: "{{ __samba_ad_member_share.ntacl.owner | default(omit) }}"
+    group: "{{ __samba_ad_member_share.ntacl.group | default(omit) }}"
+  when: __samba_ad_member_share.ntacl is defined
