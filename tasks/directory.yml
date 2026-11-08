@@ -2,6 +2,14 @@
 # role: samba_ad_member
 # file: tasks/directory.yml
 
+- name: SAMBA_AD_MEMBER | Create the parent of the share root of {{ __samba_ad_member_share.name }}
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __samba_ad_member_share.path | regex_replace('/[^/]*%.*$', '') | dirname }}"
+    state: directory
+    mode: '0755'
+
 - name: SAMBA_AD_MEMBER | Create the static share root
   become: true
   become_user: root

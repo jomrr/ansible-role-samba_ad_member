@@ -100,10 +100,10 @@ provisioner:
               create mask: "0600"
               directory mask: "0700"
           - name: "Profiles"
-            path: "/srv/samba/profiles/%U"
+            path: "/srv/samba/new/parents/profiles/%U"
             mode: "0711"
           - name: "Documents"
-            path: "/srv/samba/profiles-nested/%U/Documents"
+            path: "/srv/samba/existing/profiles-nested/%U/Documents"
             ntacl:
               aces:
                 - trustee: "EXAMPLE\\File Writers"

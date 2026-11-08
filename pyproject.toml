@@ -2,7 +2,7 @@
 name = "samba_ad_member"
 version = "0.0.0"
 description = "Join Samba AD members with winbind, RFC2307 identity mapping, and managed file shares."
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 authors = [
   { name = "Jonas Mauer" },
 ]
@@ -17,7 +17,7 @@ package = false
 
 [dependency-groups]
 ansible = [
-  "ansible-core==2.20.*",
+  "ansible-core==2.22.*",
   "ansible-lint==26.*",
 ]
 

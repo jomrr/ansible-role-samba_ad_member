@@ -532,7 +532,8 @@ available before AD directory owners and ACL principals are resolved.
   Samba substitution: /srv/samba/profiles/%U/Documents manages
   /srv/samba/profiles. Root permission overrides apply there; shares using the
   same root must agree on the permission model and settings. The full path is
-  preserved in smb.conf.
+  preserved in smb.conf. The immediate parent is created first and managed with
+  mode 0755; existing ownership is preserved.
 - POSIX root permissions are non-recursive; removing a share preserves its data.
   Undeclared POSIX ACL entries are preserved: revoke entries with state: absent.
   An empty acls list applies no entries. The role takes the access ACL mask from
