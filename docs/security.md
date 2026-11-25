@@ -188,11 +188,12 @@ logs: the default file rotates to `.old` at 10000 KiB, which does not establish
 retention or cover every file operation. Configure storage encryption, backups,
 restoration tests and log retention separately. [BSI] A2/A13; [CIS 3]; [CIS 8]
 
-Replacing `samba_ad_member_global_options` replaces its complete default
-dictionary under normal Ansible precedence. Retain the desired protections
-when adding options. Globally required encryption cannot be relaxed by a
-share. Domain-user NTLM policy belongs on the DCs; the member's `ntlm auth`
-setting controls local passdb authentication. [Samba]
+`samba_ad_member_global_options` overrides individual entries in
+`samba_ad_member_global_defaults`; omitted entries retain their baseline values.
+Changing the logging backend therefore preserves the other security settings.
+Explicit overrides can still weaken protections. Globally required encryption
+cannot be relaxed by a share. Domain-user NTLM policy belongs on the DCs;
+the member's `ntlm auth` setting controls local passdb authentication. [Samba]
 
 Native PAM management uses `authselect` on Red Hat systems, `pam-auth-update`
 on Debian/Ubuntu and `pam-config` on openSUSE. It avoids editing generated

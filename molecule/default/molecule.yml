@@ -30,6 +30,9 @@ provisioner:
         samba_ad_member_join_password: "Molecule-Only-Adm1n!"
         __samba_ad_member_test_password: "Molecule-Only-Us3r!"
         samba_ad_member_idmap_backend: "ad"
+        samba_ad_member_global_options:
+          logging: "systemd"
+          server string: "Molecule AD member"
         samba_ad_member_share_acls:
           - etype: "group"
             entity: "EXAMPLE\\File Readers"

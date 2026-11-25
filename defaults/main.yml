@@ -2,6 +2,10 @@
 # role: samba_ad_member
 # file: defaults/main.yml
 
+# ------------------------------------------------------------------------------
+# AD membership
+# ------------------------------------------------------------------------------
+
 # Required AD DNS domain / Kerberos realm; immutable after joining.
 # samba_ad_member_realm: AD.EXAMPLE.COM
 
@@ -28,6 +32,10 @@ samba_ad_member_force_join: false
 
 # Stable member computer name, at most 15 characters.
 samba_ad_member_netbios_name: '{{ ansible_facts.hostname | upper }}'
+
+# ------------------------------------------------------------------------------
+# Identity mapping
+# ------------------------------------------------------------------------------
 
 # Domain backend: ad (RFC2307), rid, or autorid. Changes require ID migration.
 samba_ad_member_idmap_backend: ad
@@ -60,6 +68,10 @@ samba_ad_member_template_homedir: /home/%D/%U
 # Fallback login shell for accounts without an AD loginShell.
 samba_ad_member_template_shell: /bin/bash
 
+# ------------------------------------------------------------------------------
+# Kerberos and PAM
+# ------------------------------------------------------------------------------
+
 # System keytab to initialize and protect; passed to jomrr.krb5 as the library default.
 samba_ad_member_keytab_path: /etc/krb5.keytab
 
@@ -69,9 +81,12 @@ samba_ad_member_pam_winbind_options:
   cached_login: true
   # require_membership_of: S-1-5-21-111111111-222222222-333333333-1100  # Group SIDs, comma-separated.
 
-# Native global options; role-owned identity/idmap settings take precedence.
-# Values are scalars; Samba lists are strings. Replacing this dictionary replaces its defaults.
-samba_ad_member_global_options:
+# ------------------------------------------------------------------------------
+# Global Samba options
+# ------------------------------------------------------------------------------
+
+# Baseline global options; samba_ad_member_global_options overrides individual entries.
+samba_ad_member_global_defaults:
   kerberos method: secrets and keytab
   apply group policies: true
   server min protocol: SMB3
@@ -94,6 +109,15 @@ samba_ad_member_global_options:
   winbind offline logon: true
   winbind enum users: false
   winbind enum groups: false
+
+# Global additions and overrides; scalar values, Samba lists as strings; role-owned identity/idmap settings take precedence.
+samba_ad_member_global_options: {}
+# samba_ad_member_global_options:
+#   logging: systemd
+
+# ------------------------------------------------------------------------------
+# Shares
+# ------------------------------------------------------------------------------
 
 # Native options inherited by every share; item options merge over this dictionary.
 # A VFS override replaces the entire stack. See README.md and docs/security.md for details.

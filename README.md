@@ -324,17 +324,18 @@ samba_ad_member_pam_winbind_options:
   cached_login: true
 ```
 
-### `samba_ad_member_global_options`
+### `samba_ad_member_global_defaults`
 
 Type: `dict`. Required: `false`.
 
-Additional native global smb.conf options with scalar values; role-owned
+Baseline global smb.conf options with scalar values;
+samba_ad_member_global_options overrides individual entries. Role-owned
 identity/idmap settings take precedence.
 
 Default:
 
 ```yaml
-samba_ad_member_global_options:
+samba_ad_member_global_defaults:
   kerberos method: secrets and keytab
   apply group policies: true
   server min protocol: SMB3
@@ -357,6 +358,20 @@ samba_ad_member_global_options:
   winbind offline logon: true
   winbind enum users: false
   winbind enum groups: false
+```
+
+### `samba_ad_member_global_options`
+
+Type: `dict`. Required: `false`.
+
+Global smb.conf options merged over samba_ad_member_global_defaults; supplied
+keys override or extend the baseline. Values are scalars; role-owned
+identity/idmap settings take precedence.
+
+Default:
+
+```yaml
+samba_ad_member_global_options: {}
 ```
 
 ### `samba_ad_member_share_options`
@@ -522,12 +537,13 @@ available before AD directory owners and ACL principals are resolved.
 - jomrr.pam owns native PAM profile selection and passwd/group NSS sources.
   samba_ad_member_pam_winbind_options configures pam_winbind.conf with
   krb5_auth=true and cached_login=true. Offline logins also require winbind
-  offline logon=true in samba_ad_member_global_options. The platform
-  krb5_ccache_type overrides the dictionary: FILE on Debian/Ubuntu or KEYRING on
-  Red Hat/openSUSE, matching jomrr.krb5. Home creation is disabled in
-  pam_winbind itself and belongs to pam_mkhomedir. Native PAM module arguments
-  take precedence over pam_winbind.conf. No daemon restart is needed for this
-  file; subsequent logins read it.
+  offline logon=true in the effective global options (enabled in
+  samba_ad_member_global_defaults). The platform krb5_ccache_type overrides the
+  dictionary: FILE on Debian/Ubuntu or KEYRING on Red Hat/openSUSE, matching
+  jomrr.krb5. Home creation is disabled in pam_winbind itself and belongs to
+  pam_mkhomedir. Native PAM module arguments take precedence over
+  pam_winbind.conf. No daemon restart is needed for this file; subsequent logins
+  read it.
 - The role manages each share root up to the first path component containing a
   Samba substitution: /srv/samba/profiles/%U/Documents manages
   /srv/samba/profiles. Root permission overrides apply there; shares using the
@@ -543,8 +559,9 @@ available before AD directory owners and ACL principals are resolved.
   rejected, including null values; role-wide POSIX defaults are ignored. Set
   ownership under ntacl.owner/group instead. Other NTACL options use the module
   defaults when omitted.
-- Share options merge over samba_ad_member_share_options. The share path and
-  role-owned global identity/idmap settings take precedence over native options.
+- Global options merge over samba_ad_member_global_defaults; share options merge
+  over samba_ad_member_share_options. The share path and role-owned global
+  identity/idmap settings take precedence over native options.
 
 ## Supported Platforms
 
@@ -583,6 +600,18 @@ container, including during a forced rejoin.
 
 ```yaml
 samba_ad_member_computer_ou: OU=Servers,DC=ad,DC=example,DC=com
+```
+
+### Send Samba logs to the systemd journal
+
+Set individual global options without repeating the baseline. This changes
+only the logging backend; authentication auditing and the other defaults
+remain active. Additional native global options can be added to the same
+dictionary. The installed Samba must support the systemd logging backend.
+
+```yaml
+samba_ad_member_global_options:
+  logging: systemd
 ```
 
 ### Group drive with readers and writers

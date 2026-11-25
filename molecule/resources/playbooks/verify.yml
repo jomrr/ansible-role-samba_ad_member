@@ -432,27 +432,42 @@
       changed_when: false
       failed_when: __samba_ad_member_nmb_state.stdout != 'masked'
 
-    - name: SAMBA_AD_MEMBER | Verify successful authentication is audited
-      become: true
-      become_user: root
+    - name: Verify an additional global option is effective
       ansible.builtin.command:
-        argv:
-          - grep
-          - --extended-regexp
-          - 'Auth:.*writer.*NT_STATUS_OK'
-          - /var/log/samba/log.samba
+        argv: [testparm, --suppress-prompt, '--parameter-name=server string']
+      register: __samba_ad_member_server_string
       changed_when: false
+      failed_when: >-
+        __samba_ad_member_server_string.rc != 0 or
+        __samba_ad_member_server_string.stdout != 'Molecule AD member'
 
-    - name: SAMBA_AD_MEMBER | Verify file deletion and ACL changes are logged
+    - name: Verify successful authentication reaches the journal
       become: true
       become_user: root
       ansible.builtin.command:
         argv:
-          - grep
-          - --extended-regexp
-          - "{{ __samba_ad_member_audit_event }}"
-          - /var/log/samba/log.samba
+          - journalctl
+          - --no-pager
+          - --output=cat
+          - --grep
+          - 'Auth:.*writer.*NT_STATUS_OK'
+      register: __samba_ad_member_auth_log
       changed_when: false
+      failed_when: __samba_ad_member_auth_log.rc != 0
+
+    - name: Verify file deletion and ACL changes reach the journal
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --no-pager
+          - --output=cat
+          - --grep
+          - "{{ __samba_ad_member_audit_event }}"
+      register: __samba_ad_member_audit_log
+      changed_when: false
+      failed_when: __samba_ad_member_audit_log.rc != 0
       loop:
         - 'samba_audit\|.*writer\|.*\|Projects\|unlinkat\|ok\|.*recycled.txt'
         - 'samba_audit\|.*writer\|.*\|Projects\|fset_nt_acl\|ok\|.*payload.txt'

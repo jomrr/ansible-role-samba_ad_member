@@ -114,10 +114,10 @@ argument_specs:
         default:
           krb5_auth: true
           cached_login: true
-      samba_ad_member_global_options:
+      samba_ad_member_global_defaults:
         type: dict
-        description: Additional native global smb.conf options with scalar values; role-owned
-          identity/idmap settings take precedence.
+        description: Baseline global smb.conf options with scalar values; samba_ad_member_global_options
+          overrides individual entries. Role-owned identity/idmap settings take precedence.
         default:
           kerberos method: secrets and keytab
           apply group policies: true
@@ -141,6 +141,12 @@ argument_specs:
           winbind offline logon: true
           winbind enum users: false
           winbind enum groups: false
+      samba_ad_member_global_options:
+        type: dict
+        description: Global smb.conf options merged over samba_ad_member_global_defaults;
+          supplied keys override or extend the baseline. Values are scalars; role-owned
+          identity/idmap settings take precedence.
+        default: {}
       samba_ad_member_share_options:
         type: dict
         description: Native options applied to every share and overridden by each share

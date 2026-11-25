@@ -71,10 +71,11 @@
       ansible.builtin.command: cmp /tmp/member-payload.txt /tmp/member-ntacl-updated.txt
       changed_when: false
 
-    - name: SAMBA_AD_MEMBER | Replace the published shares
+    - name: Replace the published shares and restore default global options
       ansible.builtin.include_role:
         name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
       vars:
+        samba_ad_member_global_options: {}
         samba_ad_member_shares:
           - name: Archive
             path: /srv/samba/projects
@@ -102,6 +103,19 @@
     - name: SAMBA_AD_MEMBER | Compare preserved data
       ansible.builtin.command: cmp /tmp/member-payload.txt /tmp/member-archive.txt
       changed_when: false
+
+    - name: Verify the replacement share is audited in the default log file
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - grep
+          - --extended-regexp
+          - 'samba_audit\|.*writer\|.*\|Archive\|connect\|ok\|'
+          - /var/log/samba/log.samba
+      register: __samba_ad_member_restored_log
+      changed_when: false
+      failed_when: __samba_ad_member_restored_log.rc != 0
 
     - name: SAMBA_AD_MEMBER | Check that removed shares are unpublished
       ansible.builtin.command:

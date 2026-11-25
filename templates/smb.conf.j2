@@ -2,7 +2,7 @@
 # file: {{ template_destpath }}
 
 [global]
-{% for __samba_ad_member_key, __samba_ad_member_value in samba_ad_member_global_options.items() %}
+{% for __samba_ad_member_key, __samba_ad_member_value in (samba_ad_member_global_defaults | combine(samba_ad_member_global_options)).items() %}
     {{ __samba_ad_member_key }} = {{ ('yes' if __samba_ad_member_value else 'no') if __samba_ad_member_value is boolean else __samba_ad_member_value }}
 {% endfor %}
     server role = member server
