@@ -81,6 +81,12 @@ samba_ad_member_pam_winbind_options:
   cached_login: true
   # require_membership_of: S-1-5-21-111111111-222222222-333333333-1100  # Group SIDs, comma-separated.
 
+# PAM account-phase groups; inherits require_membership_of, with [] disabling this restriction.
+samba_ad_member_login_groups: "{{ samba_ad_member_pam_winbind_options.require_membership_of | default('') | split(',') | map('trim') | select | list }}"
+# samba_ad_member_login_groups:
+#   - 'EXAMPLE\Linux Admins'
+#   - S-1-5-21-111111111-222222222-333333333-1100
+
 # ------------------------------------------------------------------------------
 # Global Samba options
 # ------------------------------------------------------------------------------

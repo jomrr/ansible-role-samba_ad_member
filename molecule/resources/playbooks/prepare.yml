@@ -173,6 +173,7 @@
       loop:
         - {name: File Writers, gid: 71010, members: [writer, writer2]}
         - {name: File Readers, gid: 71011, members: [reader]}
+        - {name: LoginUsers, gid: 71012, members: [writer]}
       loop_control:
         loop_var: __samba_ad_member_group
         label: "{{ __samba_ad_member_group.name }}"
@@ -182,17 +183,78 @@
   gather_facts: true
   vars:
     __samba_ad_member_clients:
-      Debian: [smbclient, diffutils]
-      RedHat: [samba-client, diffutils, util-linux]
-      Suse: [samba-client, diffutils]
+      Debian: [smbclient, diffutils, openssh-client, openssh-server]
+      RedHat: [samba-client, diffutils, util-linux, openssh-clients, openssh-server]
+      Suse: [samba-client, diffutils, openssh]
   tasks:
 
-    - name: SAMBA_AD_MEMBER | Install the SMB test client
+    - name: Install the SMB and SSH test components
       become: true
       become_user: root
       ansible.builtin.package:
         name: "{{ __samba_ad_member_clients[ansible_facts.os_family] }}"
         state: present
+
+    - name: Create the SSH runtime directory
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /run/sshd
+        state: directory
+        mode: '0755'
+
+    - name: Remove the container boot login barrier
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /run/nologin
+        state: absent
+
+    - name: Generate missing SSH host keys
+      become: true
+      become_user: root
+      ansible.builtin.command: ssh-keygen -A
+      register: __samba_ad_member_host_keys
+      changed_when: __samba_ad_member_host_keys.stdout | length > 0
+      failed_when: __samba_ad_member_host_keys.rc != 0
+
+    - name: Configure an isolated GSSAPI-only SSH listener
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config_member_test
+        content: |
+          Port 2222
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          UsePAM yes
+          GSSAPIAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication no
+          PermitRootLogin no
+          LogLevel VERBOSE
+        mode: '0600'
+        validate: /usr/sbin/sshd -t -f %s
+
+    - name: Install the GSSAPI test listener unit
+      become: true
+      become_user: root
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/member-gssapi.service
+        content: |
+          [Unit]
+          Description=Molecule GSSAPI account authorization test
+          [Service]
+          ExecStart=/usr/sbin/sshd -D -e -f /etc/ssh/sshd_config_member_test
+        mode: '0644'
+
+    - name: Start the GSSAPI test listener
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: member-gssapi
+        daemon_reload: true
+        state: started
 
     - name: SAMBA_AD_MEMBER | Prepare the storage and snapshot fixture parents
       become: true

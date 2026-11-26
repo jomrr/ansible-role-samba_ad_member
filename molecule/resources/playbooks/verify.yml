@@ -7,6 +7,29 @@
   gather_facts: true
   tasks:
 
+    - name: Verify account restrictions with valid Kerberos tickets
+      ansible.builtin.include_tasks: ../tasks/gssapi.yml
+      loop:
+        - {user: writer, allowed: true}
+        - {user: outsider, allowed: false}
+      loop_control:
+        loop_var: __samba_ad_member_login
+        label: "{{ __samba_ad_member_login.user }}"
+
+    - name: Verify local accounts still pass the system account stack
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [su, --login, --command, 'id -un', "{{ __samba_ad_member_local_user }}"]
+      loop: [root, molecule]
+      loop_control:
+        loop_var: __samba_ad_member_local_user
+      register: __samba_ad_member_local_login
+      changed_when: false
+      failed_when: >-
+        __samba_ad_member_local_login.rc != 0 or
+        __samba_ad_member_local_login.stdout != __samba_ad_member_local_user
+
     - name: SAMBA_AD_MEMBER | Authenticate through the native PAM stack and use the Kerberos cache
       ansible.builtin.command:
         argv:

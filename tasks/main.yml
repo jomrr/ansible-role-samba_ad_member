@@ -21,12 +21,6 @@
     krb5_realm: "{{ samba_ad_member_realm }}"
     krb5_default_keytab: "{{ samba_ad_member_keytab_path }}"
 
-- name: SAMBA_AD_MEMBER | Configure native winbind authentication
-  ansible.builtin.include_role:
-    name: jomrr.pam
-  vars:
-    pam_provider: winbind
-
 - name: SAMBA_AD_MEMBER | Install member services and identity providers
   ansible.builtin.import_tasks: install.yml
 
@@ -64,6 +58,9 @@
     enabled: true
     masked: false
     state: started
+
+- name: Configure native logins and account authorization
+  ansible.builtin.import_tasks: login.yml
 
 - name: SAMBA_AD_MEMBER | Manage share roots and permissions
   ansible.builtin.include_tasks: directory.yml

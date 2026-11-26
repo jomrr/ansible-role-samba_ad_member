@@ -3,6 +3,8 @@
 # file: vars/Debian.yml
 
 __samba_ad_member_packages:
+  - libnss-winbind
+  - libpam-winbind
   - samba
   - samba-common-bin
   - samba-dsdb-modules

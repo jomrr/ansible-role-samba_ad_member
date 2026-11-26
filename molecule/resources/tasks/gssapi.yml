@@ -1,0 +1,95 @@
+---
+# role: samba_ad_member
+# file: molecule/resources/tasks/gssapi.yml
+
+- name: Resolve the SSH account and its platform home
+  ansible.builtin.getent:
+    database: passwd
+    key: "EXAMPLE\\{{ __samba_ad_member_login.user }}"
+  register: __samba_ad_member_login_passwd
+
+- name: Prepare the SSH account home parent
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ (__samba_ad_member_login_passwd.ansible_facts.getent_passwd.values() | first)[4] | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Prepare the SSH account home
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ (__samba_ad_member_login_passwd.ansible_facts.getent_passwd.values() | first)[4] }}"
+    state: directory
+    owner: "EXAMPLE\\{{ __samba_ad_member_login.user }}"
+    mode: '0700'
+
+- name: Authorize the Kerberos principal for the qualified NSS login name
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: "{{ (__samba_ad_member_login_passwd.ansible_facts.getent_passwd.values() | first)[4] }}/.k5login"
+    content: "{{ __samba_ad_member_login.user }}@{{ samba_ad_member_realm }}\n"
+    owner: "EXAMPLE\\{{ __samba_ad_member_login.user }}"
+    mode: '0600'
+
+- name: Obtain a valid ticket for the SSH account
+  ansible.builtin.command:
+    argv: [kinit, "{{ __samba_ad_member_login.user }}"]
+    stdin: "{{ __samba_ad_member_test_password }}"
+  environment:
+    KRB5CCNAME: FILE:/tmp/member-login.ccache
+  register: __samba_ad_member_login_ticket
+  changed_when: false
+  failed_when: __samba_ad_member_login_ticket.rc != 0
+  no_log: true
+
+- name: Exercise SSH GSSAPI without password or public-key fallback
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -F
+      - /dev/null
+      - -p
+      - '2222'
+      - -o
+      - BatchMode=yes
+      - -o
+      - GSSAPIAuthentication=yes
+      - -o
+      - PreferredAuthentications=gssapi-with-mic
+      - -o
+      - StrictHostKeyChecking=accept-new
+      - -o
+      - UserKnownHostsFile=/tmp/member-login-known-hosts
+      - -l
+      - "{{ __samba_ad_member_login.user }}@{{ samba_ad_member_realm }}"
+      - "{{ ansible_facts.hostname | lower }}.{{ samba_ad_member_realm | lower }}"
+      - id -un
+  environment:
+    KRB5CCNAME: FILE:/tmp/member-login.ccache
+  register: __samba_ad_member_gssapi
+  changed_when: false
+  failed_when: >-
+    (__samba_ad_member_login.allowed and
+     (__samba_ad_member_gssapi.rc != 0 or
+      __samba_ad_member_login.user not in __samba_ad_member_gssapi.stdout)) or
+    (not __samba_ad_member_login.allowed and __samba_ad_member_gssapi.rc != 255)
+
+- name: Verify the rejected ticket holder reached PAM account authorization
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --unit=member-gssapi
+      - --no-pager
+      - --output=cat
+      - "--grep=Access denied for user.*{{ __samba_ad_member_login.user }}.*by PAM account configuration"
+  register: __samba_ad_member_account_denial
+  changed_when: false
+  failed_when: __samba_ad_member_account_denial.rc != 0
+  when: not __samba_ad_member_login.allowed

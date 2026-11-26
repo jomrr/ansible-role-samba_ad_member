@@ -27,8 +27,9 @@ NTACLs. The default ad backend reads domain-wide RFC2307 identities.
   machine GPOs by winbind.
 - Stopped, disabled and masked NetBIOS name service; SMB uses TCP 445 by
   default.
-- pam_winbind.conf with Kerberos authentication, cached offline logins and the
-  platform credential cache type.
+- Winbind PAM packages and pam_winbind.conf with Kerberos authentication, cached
+  logins and the platform cache type.
+- Optional account-phase group restrictions passed to jomrr.pam.
 - Authoritative Samba share definitions, static share roots, access/default
   POSIX ACL entries, and persistent SELinux directory labels.
 - Optional filesystem NTACLs, ownership and inheritance for share roots, managed
@@ -47,8 +48,9 @@ NTACLs. The default ad backend reads domain-wide RFC2307 identities.
 
 - Galaxy installs jomrr.krb5 and jomrr.pam through meta/requirements.yml when
   installing this role. For a Git checkout, run ansible-galaxy role install -r
-  requirements.yml. This role invokes both dependencies before configuring Samba
-  and joining the domain.
+  requirements.yml. Kerberos is configured before the join; native PAM
+  integration follows the join and winbind startup. jomrr.pam must support
+  pam_access_groups.
 - Ansible Core >= 2.20; jomrr.samba >= 2.3.0 for samba_ntacl, ansible.posix >=
   2.0.0, and community.general >= 12.0.0.
 - An existing AD domain, working AD DNS including SRV records, a stable
@@ -324,6 +326,14 @@ samba_ad_member_pam_winbind_options:
   cached_login: true
 ```
 
+### `samba_ad_member_login_groups`
+
+Type: `list`. Required: `false`.
+
+Groups allowed by the PAM account phase, as group SIDs or NSS names. Defaults to
+the comma-separated require_membership_of in
+samba_ad_member_pam_winbind_options. An empty list disables this restriction.
+
 ### `samba_ad_member_global_defaults`
 
 Type: `dict`. Required: `false`.
@@ -488,6 +498,7 @@ samba_ad_member_shares: []
 - `/etc/samba/smb.conf (complete file; previous version backed up)`
 - `/etc/security/pam_winbind.conf (root:root, mode 0644, complete file with
   backup)`
+- `Native account authorization profiles through jomrr.pam`
 - `Machine keytab at samba_ad_member_keytab_path (default /etc/krb5.keytab;
   Samba owns its contents)`
 - `Static share roots declared in samba_ad_member_shares, with POSIX ACLs or
@@ -534,7 +545,7 @@ available before AD directory owners and ACL principals are resolved.
   set in inventory, including pam_mkhomedir and pam_authselect_force. Kerberos
   configuration changes do not trigger this role's handlers; smb.conf changes
   still synchronize the keytab and restart winbind and Samba.
-- jomrr.pam owns native PAM profile selection and passwd/group NSS sources.
+- jomrr.pam owns the native PAM stack and passwd/group NSS sources.
   samba_ad_member_pam_winbind_options configures pam_winbind.conf with
   krb5_auth=true and cached_login=true. Offline logins also require winbind
   offline logon=true in the effective global options (enabled in
@@ -544,6 +555,13 @@ available before AD directory owners and ACL principals are resolved.
   pam_mkhomedir. Native PAM module arguments take precedence over
   pam_winbind.conf. No daemon restart is needed for this file; subsequent logins
   read it.
+- samba_ad_member_login_groups defaults to the groups in pam_winbind.conf's
+  require_membership_of. Set a list of group SIDs or NSS group names to choose
+  different account-phase groups; [] disables this restriction. At least one
+  group must match. Groups must resolve through NSS, including RFC2307 GIDs with
+  the ad backend. Local accounts are exempt. Applications must include the
+  system PAM account stack; separate PAM stacks and SMB authorization are
+  unaffected. SSH server settings remain outside this role.
 - The role manages each share root up to the first path component containing a
   Samba substitution: /srv/samba/profiles/%U/Documents manages
   /srv/samba/profiles. Root permission overrides apply there; shares using the
@@ -574,6 +592,21 @@ available before AD directory owners and ACL principals are resolved.
 | Debian | Ubuntu | latest | [jomrr/molecule-ubuntu:latest](https://hub.docker.com/r/jomrr/molecule-ubuntu) |
 
 ## Example Playbook
+
+### Restrict system logins to AD groups
+
+The account phase inherits these groups and also restricts SSH GSSAPI
+and public-key logins.
+
+```yaml
+samba_ad_member_pam_winbind_options:
+  krb5_auth: true
+  cached_login: true
+  require_membership_of: S-1-5-21-111111111-222222222-333333333-1100
+# Optional independent account-phase policy:
+# samba_ad_member_login_groups:
+#   - 'EXAMPLE\Linux Admins'
+```
 
 ### Join with RFC2307 identities
 

@@ -25,7 +25,7 @@ group shares. The table records the choices and their reasons.
 | Additional VFS modules | Explicit ordered stack and native options. | [BSI] A1/A10 |
 | Identity mapping | RFC2307 `ad`; domain 70000-99999, catch-all 65536-69999. | [BSI] A6; [ID mapping]; [Login defaults] |
 | Share administration | Generate and validate the complete smb.conf. | [BSI] A2/A5 |
-| PAM integration | jomrr.pam owns native PAM/NSS selection; this role owns pam_winbind.conf. | [Authselect]; [BSI] A6 |
+| PAM integration | jomrr.pam owns native PAM/NSS selection and account group checks; this role owns pam_winbind.conf. | [Authselect]; [BSI] A6 |
 | Offline logins | Enable cached PAM logins after successful online authentication. | [Samba]; [PAM Winbind] |
 | DNS and time | Use existing AD infrastructure. | [BSI] A7-A9 |
 | Backups | Preserve data, ACLs, xattrs, secrets and idmap state. | [BSI] A13 |
@@ -202,15 +202,40 @@ authentication files directly. [Authselect]; [Debian PAM]; [SUSE PAM]
 In particular, `authselect select winbind` manages both NSS and PAM and enables
 domain authentication for PAM consumers; it cannot merely add winbind to NSS.
 PAM logins and automatic home creation are separate choices from SMB access.
-The role invokes `jomrr.pam` with `pam_provider: winbind` before configuring
-Samba. The dependency owns the PAM stack and NSS provider selection.
-This role owns `/etc/security/pam_winbind.conf`,
-enables Kerberos authentication and selects FILE caches on Debian/Ubuntu or
-persistent KEYRING caches on Red Hat/openSUSE, matching `jomrr.krb5`.
+The role invokes `jomrr.pam` with `pam_provider: winbind` after joining
+and starting winbind. The dependency owns native profile and NSS selection.
+This role owns `/etc/security/pam_winbind.conf`, enables Kerberos
+authentication and selects FILE caches on Debian/Ubuntu or persistent KEYRING
+caches on Red Hat/openSUSE, matching `jomrr.krb5`. It installs the Winbind
+PAM/NSS modules before invoking `jomrr.pam`.
 `pam_mkhomedir` controls home creation; pam_winbind's own home creation stays
 disabled. Native PAM module arguments take precedence over pam_winbind.conf.
 The file is read on subsequent logins without restarting winbind. [Authselect];
 [PAM Winbind]
+
+`require_membership_of` in pam_winbind restricts password authentication,
+but its account entry point does not repeat that group check. Therefore the
+role also restricts the system PAM account phase through
+`samba_ad_member_login_groups`. By default it inherits `require_membership_of`;
+an explicit list replaces the account policy and `[]` disables it. Without
+configured groups, this role adds no login restriction. [PAM Winbind source]
+
+The account check uses `pam_access` and NSS group membership. Group SIDs are
+resolved after the join; groups need working NSS mappings, including populated
+RFC2307 GIDs with the `ad` backend. NSS resolves membership at login time;
+Winbind caches can delay the effect of AD changes, particularly offline.
+Unlike `require_membership_of`, this option accepts groups, not individual user
+SIDs. Password logins must satisfy both configured policies. [PAM Access]
+
+After winbind starts, this role resolves the configured group SIDs and NSS
+names and passes the resulting names as `pam_access_groups` to `jomrr.pam`.
+That role owns the account configuration, native profiles and local-user
+exemption. Accounts in `/etc/passwd`, including root, remain exempt from this
+group restriction. See the [PAM role] for platform behavior and requirements.
+
+The restriction applies to services using the system PAM account stack,
+including OpenSSH with `UsePAM yes`. Independent PAM stacks, SSH server
+configuration and SMB authorization remain separate. [OpenSSH PAM]
 
 `cached_login = yes` and `winbind offline logon = yes` enable PAM logins with
 locally cached credentials after a successful online login. While offline,
@@ -251,3 +276,8 @@ Set both options to false when online-only authentication is required.
 [PAM Winbind]: https://www.samba.org/samba/docs/current/man-html/pam_winbind.conf.5.html
 
 [NTACL module]: https://github.com/jomrr/ansible-collection-samba/blob/v2.3.0/plugins/modules/samba_ntacl.py
+
+[PAM Winbind source]: https://github.com/samba-team/samba/blob/samba-4.24.6/nsswitch/pam_winbind.c
+[PAM Access]: https://man7.org/linux/man-pages/man8/pam_access.8.html
+[OpenSSH PAM]: https://github.com/openssh/openssh-portable/blob/master/sshd_config.5
+[PAM role]: https://github.com/jomrr/ansible-role-pam#security-notes

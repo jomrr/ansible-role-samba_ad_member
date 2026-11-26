@@ -114,6 +114,12 @@ argument_specs:
         default:
           krb5_auth: true
           cached_login: true
+      samba_ad_member_login_groups:
+        type: list
+        elements: str
+        description: Groups allowed by the PAM account phase, as group SIDs or NSS names.
+          Defaults to the comma-separated require_membership_of in samba_ad_member_pam_winbind_options.
+          An empty list disables this restriction.
       samba_ad_member_global_defaults:
         type: dict
         description: Baseline global smb.conf options with scalar values; samba_ad_member_global_options

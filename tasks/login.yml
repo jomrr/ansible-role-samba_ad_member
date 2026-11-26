@@ -1,0 +1,33 @@
+---
+# role: samba_ad_member
+# file: tasks/login.yml
+
+- name: login | Resolve account group SIDs through winbind
+  ansible.builtin.command:
+    argv: [wbinfo, --sid-to-name, "{{ __samba_ad_member_login_group }}"]
+  loop: "{{ samba_ad_member_login_groups | select('match', '^S-') }}"
+  loop_control:
+    loop_var: __samba_ad_member_login_group
+  register: __samba_ad_member_login_sids
+  changed_when: false
+  failed_when: __samba_ad_member_login_sids.rc != 0 or __samba_ad_member_login_sids.stdout is not search(' [245]$')
+  check_mode: false
+
+- name: login | Resolve account groups through NSS
+  ansible.builtin.getent:
+    database: group
+    service: winbind
+    key: "{{ __samba_ad_member_login_group }}"
+  loop: >-
+    {{ (samba_ad_member_login_groups | reject('match', '^S-') | list) +
+       (__samba_ad_member_login_sids.results | map(attribute='stdout') | map('regex_replace', ' [0-9]+$', '') | list) }}
+  loop_control:
+    loop_var: __samba_ad_member_login_group
+  register: __samba_ad_member_login_nss
+
+- name: login | Configure PAM with the resolved Winbind account groups
+  ansible.builtin.include_role:
+    name: jomrr.pam
+  vars:
+    pam_provider: winbind
+    pam_access_groups: "{{ __samba_ad_member_login_nss.results | map(attribute='ansible_facts.getent_group') | map('list') | flatten }}"
